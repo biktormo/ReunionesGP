@@ -1,0 +1,437 @@
+import React, { useState, useEffect } from 'react';
+import { jsPDF } from "jspdf";
+import html2canvas from "html2canvas";
+import { 
+  Printer, Music, Mic2, BookOpen, Users, Settings, LogOut, 
+  Edit3, Key, Mail, UserCheck, ClipboardPaste, Info, Save, Trash2, RotateCcw
+} from 'lucide-react';
+
+// --- CONFIGURACIÓN FIREBASE (REUNIONES-GP) ---
+import { initializeApp } from "firebase/app";
+import { getFirestore, doc, onSnapshot, setDoc } from "firebase/firestore";
+import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "firebase/auth";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyBtYm5P6hWi4rzE1sGsrjutMK1ukfI0wAg",
+  authDomain: "reuniones-gp.firebaseapp.com",
+  projectId: "reuniones-gp",
+  storageBucket: "reuniones-gp.firebasestorage.app",
+  messagingSenderId: "347619552073",
+  appId: "1:347619552073:web:993fe0b33570076f564898"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+const auth = getAuth(app);
+
+const MIEMBROS = [
+  { n: "Ascanio Nelson", s: "M", r: ["t3", "meca"] },
+  { n: "Ascanio Viviana", s: "F", r: [] },
+  { n: "Baragaño Moira", s: "F", r: [] },
+  { n: "Díaz Dante", s: "M", r: ["t3"] },
+  { n: "Gualtieri Abel", s: "M", r: ["presi", "ora", "t12", "t3", "vida", "atCond", "wePresi"] },
+  { n: "Gualtieri Mariel", s: "F", r: [] },
+  { n: "Gonzalez Maria", s: "F", r: [] },
+  { n: "Guzmán Angélica", s: "F", r: [] },
+  { n: "Huber José", s: "M", r: ["t3"] },
+  { n: "Huber Nancy", s: "F", r: [] },
+  { n: "Huber Walter", s: "M", r: ["ora", "t3", "ebLect", "atLect", "meca"] },
+  { n: "Montes de Oca Pamela", s: "F", r: [] },
+  { n: "Montes de Oca Cristian", s: "M", r: ["ora", "t12", "t3", "vida", "atCond", "atLect", "wePresi", "meca"] },
+  { n: "Luceros Mirta", s: "F", r: [] },
+  { n: "Luceros Sergio", s: "M", r: ["ora", "t12", "t3", "ebLect", "atLect", "meca"] },
+  { n: "Mena Georgina", s: "F", r: [] },
+  { n: "Monzón Apolinaria", s: "F", r: [] },
+  { n: "Ojeda Iker", s: "M", r: ["t3", "ebLect", "atLect", "meca"] },
+  { n: "Ojeda Mariana", s: "F", r: [] },
+  { n: "Ojeda Victor", s: "M", r: ["presi", "ora", "t12", "t3", "vida", "atCond", "wePresi"] },
+  { n: "Ponce Elisa", s: "F", r: [] },
+  { n: "Rojas Benjamín", s: "M", r: ["t3", "meca"] },
+  { n: "Rojas Lisseth", s: "F", r: [] },
+  { n: "Rojas Iara", s: "F", r: [] },
+  { n: "Romero Jose", s: "M", r: ["ora", "t12", "t3", "vida", "wePresi", "meca"] },
+  { n: "Romero Margarita", s: "F", r: [] },
+  { n: "Sardina Clara", s: "F", r: [] },
+  { n: "Sardina Jonatan", s: "M", r: ["ora", "t3", "ebLect", "atLect", "meca"] },
+  { n: "Sardina Mónica", s: "F", r: [] },
+  { n: "Sardina Tizziana", s: "F", r: [] },
+  { n: "Tinnirello Carmen", s: "F", r: [] },
+  { n: "Cáceres Paulina", s: "F", r: [] },
+  { n: "Caceres Nelida", s: "F", r: [] },
+  { n: "Perera Carlos", s: "M", r: ["t3"] },
+  { n: "Perera Felisa", s: "F", r: [] },
+  { n: "Torres Victor", s: "M", r: ["t3"] },
+  { n: "Torres Noelia", s: "F", r: [] }
+].sort((a, b) => a.n.localeCompare(b.n));
+
+const App = () => {
+  const [user, setUser] = useState(null);
+  const [role, setRole] = useState('member');
+  const [loginMail, setLoginMail] = useState('');
+  const [loginPass, setLoginPass] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [mes, setMes] = useState(new Date().getMonth());
+  const [anio, setAnio] = useState(2026);
+  const [semanas, setSemanas] = useState([]);
+  const [editMode, setEditMode] = useState(false);
+  const [showMeta, setShowMeta] = useState(false);
+
+  const getFiltered = (rol, type = "normal") => {
+    if (type === "disc") return MIEMBROS.filter(m => m.s === "M");
+    if (rol === "all") return MIEMBROS;
+    return MIEMBROS.filter(m => m.r.includes(rol));
+  };
+
+  useEffect(() => {
+    onAuthStateChanged(auth, (u) => {
+      if (u) {
+        setUser(u);
+        if (u.email === "biktormo@gmail.com") setRole('admin');
+        else if (["abel@pinedo.com", "cristian@pinedo.com"].includes(u.email)) setRole('editor');
+        else setRole('member');
+      } else { setUser(null); setRole('member'); }
+      setLoading(false);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!user) return;
+    const docId = `${anio}-${mes + 1}`;
+    const unsub = onSnapshot(doc(db, "programas", docId), (docSnap) => {
+      let base = generarSemanasBase(mes, anio);
+      if (docSnap.exists()) {
+        const cloud = docSnap.data().semanas;
+        const fusion = base.map(s => {
+          const match = cloud.find(c => c.dateKey === s.dateKey);
+          return match ? { ...s, asig: match.asig, meta: match.meta || s.meta } : s;
+        });
+        setSemanas(fusion);
+      } else { setSemanas(base); }
+    });
+    return () => unsub();
+  }, [user, mes, anio]);
+
+  const generarSemanasBase = (m, a) => {
+    let firstDay = new Date(a, m, 1);
+    while (firstDay.getDay() !== 1) firstDay.setDate(firstDay.getDate() + 1);
+    let temp = [];
+    let current = new Date(firstDay);
+    for (let i = 0; i < 5; i++) {
+      if (current.getMonth() !== m && i > 3) break;
+      const dKey = current.toISOString().split('T')[0];
+      let end = new Date(current); end.setDate(current.getDate() + 6);
+      
+      const mesIni = current.toLocaleString('es', { month: 'long' });
+      const mesFin = end.toLocaleString('es', { month: 'long' });
+      const rangoTexto = mesIni === mesFin 
+        ? `${current.getDate()}-${end.getDate()} DE ${mesIni.toUpperCase()}`
+        : `${current.getDate()} DE ${mesIni.toUpperCase()} A ${end.getDate()} DE ${mesFin.toUpperCase()}`;
+
+      temp.push({
+        id: current.getTime(), dateKey: dKey,
+        rango: rangoTexto,
+        meta: { lect: "LECTURA SEMANAL", can1: "0", can2: "0", can3: "0", tesoros: [], maestros: [], vida: [], atT: "Título Atalaya..." },
+        asig: {}
+      });
+      current.setDate(current.getDate() + 7);
+    }
+    return temp;
+  };
+
+  const processPastedText = (sIdx, text) => {
+    if (!text) return;
+    const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+    const n = [...semanas];
+    
+    let currentItems = [];
+    let currentItem = null;
+    let sectionState = "START"; // START, T, M, V
+    let songsFound = [];
+    let possibleLectura = "LECTURA SEMANAL";
+
+    lines.forEach((line, idx) => {
+        const up = line.toUpperCase();
+        
+        // Detección de Secciones reales por encabezado
+        if (up.includes("TESOROS DE LA BIBLIA")) sectionState = "T";
+        else if (up.includes("SEAMOS MEJORES MAESTROS")) sectionState = "M";
+        else if (up.includes("NUESTRA VIDA CRISTIANA")) sectionState = "V";
+
+        // Detección de lectura (Línea arriba de la primera canción)
+        if (line.toLowerCase().includes("canción") && idx > 0 && sectionState === "START") {
+            possibleLectura = lines[idx-1];
+        }
+
+        // Extracción de canciones (Regex estricto)
+        const canMatch = line.match(/\bCanci[óo]n\s+(\d+)\b/i);
+        if (canMatch) songsFound.push(canMatch[1]);
+
+        // Detección de Items numéricos
+        if (line.match(/^\d\./)) {
+            if (currentItem) currentItems.push(currentItem);
+            currentItem = { t: line, d: "", sec: sectionState };
+        } else if (currentItem) {
+            currentItem.d += line + " ";
+        }
+    });
+    if (currentItem) currentItems.push(currentItem);
+
+    // Reparto por estado de sección (ignora el número de item, manda el orden)
+    n[sIdx].meta.tesoros = currentItems.filter(i => i.sec === "T");
+    n[sIdx].meta.maestros = currentItems.filter(i => i.sec === "M");
+    n[sIdx].meta.vida = currentItems.filter(i => i.sec === "V");
+    
+    n[sIdx].meta.lect = possibleLectura.toUpperCase();
+    n[sIdx].meta.can1 = songsFound[0] || "0";
+    n[sIdx].meta.can2 = songsFound[1] || "0";
+    n[sIdx].meta.can3 = songsFound[2] || "0";
+
+    setSemanas(n);
+    setDoc(doc(db, "programas", `${anio}-${mes + 1}`), { semanas: n });
+    alert("¡Estructura sincronizada!");
+  };
+
+  const clearWeek = (sIdx) => {
+    if(!window.confirm("¿Borrar todo?")) return;
+    const n = [...semanas];
+    n[sIdx].meta = { lect: "LECTURA SEMANAL", can1: "0", can2: "0", can3: "0", tesoros: [], maestros: [], vida: [], atT: "Título Atalaya..." };
+    n[sIdx].asig = {};
+    setSemanas(n);
+    setDoc(doc(db, "programas", `${anio}-${mes + 1}`), { semanas: n });
+  };
+
+  const updateAsig = (sIdx, field, val) => {
+    if (role === 'member') return;
+    const n = [...semanas]; n[sIdx].asig[field] = val; setSemanas(n);
+    setDoc(doc(db, "programas", `${anio}-${mes + 1}`), { semanas: n });
+  };
+
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    try { await signInWithEmailAndPassword(auth, loginMail, loginPass); } 
+    catch (err) { alert("Credenciales incorrectas"); setLoading(false); }
+  };
+
+  if (loading) return <div className="h-screen flex items-center justify-center bg-slate-900 text-blue-400 font-black animate-pulse">Pinedo App...</div>;
+
+  if (!user) return (
+    <div className="min-h-screen bg-slate-900 flex items-center justify-center p-6">
+      <form onSubmit={handleLogin} className="bg-white p-12 rounded-[3.5rem] shadow-2xl w-full max-w-md space-y-6 border-t-[12px] border-blue-600 text-center">
+        <h2 className="text-4xl font-black text-slate-800 uppercase tracking-tighter leading-none">Pinedo App</h2>
+        <input type="email" placeholder="Email" className="w-full p-4 bg-slate-50 border rounded-2xl outline-none font-bold shadow-inner" onChange={e => setLoginMail(e.target.value)} />
+        <input type="password" placeholder="Clave" className="w-full p-4 bg-slate-50 border rounded-2xl outline-none font-bold shadow-inner" onChange={e => setLoginPass(e.target.value)} />
+        <button type="submit" className="w-full bg-blue-600 text-white py-4 rounded-2xl font-black uppercase tracking-widest shadow-lg">Entrar</button>
+      </form>
+    </div>
+  );
+
+  return (
+    <div className="bg-slate-200 min-h-screen font-sans antialiased pb-20 leading-none">
+        <style>{`
+            @media print {
+                @page { size: A4; margin: 0; }
+                body { background: white; }
+                .print-hidden { display: none !important; }
+                .page-break { 
+                    page-break-before: always; 
+                    height: 296mm;
+                    padding: 10mm 15mm !important;
+                    margin: 0 !important;
+                    box-shadow: none !important;
+                    border: none !important;
+                }
+                .page-break:first-of-type { page-break-before: avoid; }
+            }
+            .tooltip { visibility: hidden; opacity: 0; transition: 0.1s; position: absolute; z-index: 50; }
+            .has-tooltip:hover .tooltip { visibility: visible; opacity: 1; }
+        `}</style>
+
+      {/* NAVBAR */}
+      <div className="bg-white border-b sticky top-0 z-50 p-4 shadow-sm flex justify-between items-center print-hidden">
+        <div className="flex gap-4">
+          <div className="px-4 py-1.5 bg-blue-600 text-white rounded-full font-black text-[10px] uppercase shadow-sm flex items-center gap-2"><UserCheck size={14}/> {role}</div>
+          <select className="border-2 border-slate-100 p-1.5 rounded-xl font-black bg-slate-50 text-xs shadow-sm" value={mes} onChange={e => setMes(Number(e.target.value))}>
+            {["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"].map((m,i)=><option key={i} value={i}>{m}</option>)}
+          </select>
+        </div>
+        <div className="flex gap-2">
+          {role !== 'member' && (
+            <button onClick={() => setEditMode(!editMode)} className={`px-5 py-2 rounded-full font-black text-[10px] uppercase shadow-md transition-all ${editMode ? 'bg-orange-500 text-white' : 'bg-white text-slate-600 border'}`}>
+              {editMode ? "💾 FINALIZAR" : "✏️ ASIGNAR"}
+            </button>
+          )}
+          {role === 'admin' && (
+            <button onClick={() => setShowMeta(!showMeta)} className={`px-5 py-2 rounded-full font-black text-[10px] uppercase border shadow-md transition-all ${showMeta ? 'bg-yellow-500 text-white' : 'bg-white'}`}>ESTRUCTURA</button>
+          )}
+          <button onClick={() => window.print()} className="bg-emerald-600 text-white px-6 py-2 rounded-full font-black text-[10px] shadow-lg uppercase">PDF</button>
+          <button onClick={() => { signOut(auth); setUser(null); }} className="bg-slate-100 p-2 rounded-full transition-colors hover:bg-red-500 hover:text-white"><LogOut size={18}/></button>
+        </div>
+      </div>
+
+      <div id="print-area" className="max-w-4xl mx-auto space-y-4">
+        {/* TITULO SOLO PAGINA 1 */}
+        <div className="text-center border-b-4 border-slate-900 pb-2 pt-10 mb-4 px-10">
+            <h1 className="text-xl font-black text-slate-900 uppercase">Programa de asignaciones para las Reuniones</h1>
+            <p className="text-sm font-bold text-blue-800 uppercase tracking-widest mt-1 italic leading-none">Congregación General Pinedo</p>
+        </div>
+
+        {semanas.map((s, sIdx) => (
+          <div key={s.id} className="bg-white border border-slate-200 page-break rounded-[2.5rem] overflow-hidden mb-8 shadow-sm relative italic">
+            <div className="bg-slate-900 p-3 text-center text-white text-xl font-black tracking-widest uppercase italic">{s.rango}</div>
+            
+            {showMeta && role === 'admin' && (
+              <div className="bg-yellow-50 p-6 border-b-4 border-yellow-400 print:hidden flex flex-col gap-2">
+                 <div className="flex justify-between items-center">
+                    <p className="text-[10px] font-black text-yellow-800 uppercase tracking-widest leading-none">Pega el contenido de JW.ORG para esta semana:</p>
+                    <button onClick={() => clearWeek(sIdx)} className="text-red-600 flex items-center gap-1 text-[9px] font-black uppercase hover:underline flex items-center gap-1"><RotateCcw size={14}/> Limpiar Semana</button>
+                 </div>
+                 <textarea className="w-full h-16 p-3 rounded-2xl border-2 border-yellow-200 text-[10px] font-mono shadow-inner outline-none bg-white/50 focus:bg-white transition-all" 
+                    placeholder="Pega el texto aquí..." onPaste={(e) => processPastedText(sIdx, e.clipboardData.getData('Text'))}/>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-10 p-10 leading-none">
+              
+              {/* --- VIDA Y MINISTERIO --- */}
+              <div className="space-y-4 leading-none">
+                <div className="flex items-center gap-3 border-b-2 border-[#007B5E] pb-1 text-[#007B5E]">
+                  <BookOpen size={24} />
+                  <h3 className="font-black uppercase text-[11px] italic tracking-tighter leading-none">Vida y Ministerio Cristianos</h3>
+                </div>
+
+                <div className="flex justify-between font-black text-[9px] bg-emerald-50 p-3 border border-emerald-100 rounded-xl leading-none shadow-inner">
+                    <span className="flex items-center gap-1 font-black leading-none"><Music size={12}/> CANCIÓN {s.meta.can1}</span>
+                    <span className="uppercase text-slate-700 tracking-tighter leading-none font-bold tracking-widest">{s.meta.lect}</span>
+                </div>
+
+                <div className="space-y-0.5">
+                    <SelectRow label="Presidente" val={s.asig.presi} options={MIEMBROS.filter(m => m.r.includes("presi"))} edit={editMode} onSelect={v => updateAsig(sIdx, 'presi', v)} />
+                    <SelectRow label="Oración Inicial" val={s.asig.orIn} options={MIEMBROS.filter(m => m.r.includes("ora"))} edit={editMode} onSelect={v => updateAsig(sIdx, 'orIn', v)} />
+                </div>
+
+                <SectionHeader title="Tesoros de la Biblia" color="bg-[#007B5E]" />
+                <div className="space-y-3 px-1">
+                  {s.meta.tesoros?.map((t, tIdx) => (
+                    <div key={tIdx} className="relative has-tooltip">
+                        <p className="text-[11px] font-black text-emerald-950 border-b pb-0.5 uppercase cursor-help leading-tight leading-none">{t.t}</p>
+                        <div className="tooltip bg-black text-white text-[10px] p-2 rounded-lg w-64 -top-2 left-full ml-2 shadow-xl border">{t.d}</div>
+                        <SelectRow label="Asignado" val={s.asig[`t${tIdx}`]} options={MIEMBROS.filter(m => m.r.includes(tIdx === 2 ? "t3" : "t12"))} edit={editMode} onSelect={v => updateAsig(sIdx, `t${tIdx}`, v)} />
+                    </div>
+                  ))}
+                </div>
+
+                <SectionHeader title="Seamos Mejores Maestros" color="bg-[#C18B00]" />
+                <div className="space-y-2 mb-2 leading-none">
+                  {s.meta.maestros?.map((m, mIdx) => (
+                    <div key={mIdx} className="border-l-2 border-amber-300 pl-3 py-1 bg-amber-50/50 rounded-r-lg mb-1 relative has-tooltip">
+                      <p className="text-[10px] font-black text-amber-800 uppercase cursor-help leading-tight leading-none tracking-tight">{m.t}</p>
+                      <div className="tooltip bg-amber-900 text-white text-[10px] p-2 rounded-lg w-64 -top-2 left-full ml-2 shadow-xl border">{m.d}</div>
+                      {!m.t.toLowerCase().includes("discurso") ? (
+                        <>
+                          <SelectRow label="Estudiante" val={s.asig[`m${mIdx}`]} options={MIEMBROS} edit={editMode} onSelect={v => updateAsig(sIdx, `m${mIdx}`, v)} />
+                          <SelectRow label="Ayudante" val={s.asig[`m${mIdx}A`]} options={MIEMBROS} edit={editMode} onSelect={v => updateAsig(sIdx, `m${mIdx}A`, v)} />
+                        </>
+                      ) : (
+                        <SelectRow label="Discursante" val={s.asig[`m${mIdx}`]} options={MIEMBROS.filter(m => m.s === "M")} edit={editMode} onSelect={v => updateAsig(sIdx, `m${mIdx}`, v)} />
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                <SectionHeader title="Nuestra Vida Cristiana" color="bg-[#8A1A11]" />
+                <div className="space-y-4">
+                    <div className="font-black text-[9px] flex items-center gap-2 leading-none"><Music size={12} className="text-red-600"/> CANCIÓN {s.meta.can2}</div>
+                    {s.meta.vida?.map((v, vIdx) => (
+                       <div key={vIdx} className="relative has-tooltip">
+                          <p className="text-[10px] font-black text-red-950 uppercase border-b pb-0.5 cursor-help leading-tight leading-none tracking-tight leading-none">{v.t}</p>
+                          <div className="tooltip bg-red-900 text-white text-[10px] p-2 rounded-lg w-64 -top-2 left-full ml-2 shadow-xl">{v.d}</div>
+                          {v.t.toLowerCase().includes("estudio b") || v.t.toLowerCase().includes("viajante") ? (
+                            <div className="bg-red-50 p-2.5 rounded-xl border border-red-100 mt-1 space-y-1 shadow-inner leading-none italic font-bold">
+                                <SelectRow label="Conductor" val={s.asig[`v${vIdx}_C`]} options={MIEMBROS.filter(m => m.r.includes("vida"))} edit={editMode} onSelect={vVal => updateAsig(sIdx, `v${vIdx}_C`, vVal)} />
+                                <SelectRow label="Lector" val={s.asig[`v${vIdx}_L`]} options={getFiltered("ebLect") || getFiltered("atLect")} edit={editMode} onSelect={vVal => updateAsig(sIdx, `v${vIdx}_L`, vVal)} />
+                            </div>
+                          ) : (
+                            <SelectRow label="Asignado" val={s.asig[`v${vIdx}`]} options={getFiltered("vida")} edit={editMode} onSelect={vVal => updateAsig(sIdx, `v${vIdx}`, vVal)} />
+                          )}
+                       </div>
+                    ))}
+                    <div className="pt-2 border-t text-[9px] font-black flex justify-between uppercase leading-none italic shadow-none">
+                        <span>CANCIÓN {s.meta.can3} Y ORACIÓN</span>
+                        <SelectRow label="O. Final" val={s.asig.orFi} options={getFiltered("ora")} edit={editMode} onSelect={v => updateAsig(sIdx, 'orFi', v)} />
+                    </div>
+                </div>
+              </div>
+
+              {/* --- COLUMNA 2: FIN DE SEMANA --- */}
+              <div className="space-y-6 flex flex-col h-full italic leading-none">
+                <div className="flex items-center gap-3 border-b-2 border-blue-800 pb-1 text-blue-800"><Users size={24}/><h3 className="font-black uppercase text-xs italic tracking-tighter leading-none tracking-widest leading-none tracking-tighter leading-none">Fin de Semana</h3></div>
+                
+                <div className="bg-white p-6 rounded-[2rem] border border-blue-100 shadow-sm mb-4 leading-none shadow-md">
+                  <SelectRow label="Presidente" val={s.asig.wePresi} options={getFiltered("wePresi")} edit={editMode} onSelect={v => updateAsig(sIdx, 'wePresi', v)} />
+                  <div className="mt-6 pt-6 border-t-2 border-slate-50 text-center space-y-2 leading-none shadow-inner p-2 rounded-xl">
+                    <p className="text-[9px] font-black text-blue-600 uppercase tracking-widest leading-none tracking-widest leading-none tracking-widest leading-none">Discurso Público</p>
+                    {editMode ? (
+                      <div className="space-y-1">
+                        <input className="w-full text-center font-bold border p-1 rounded-lg text-[9px] italic shadow-inner outline-none" placeholder="Título Discurso..." value={s.asig.discTit || ""} onChange={e => updateAsig(sIdx, 'discTit', e.target.value)} />
+                        <input className="w-full text-center border p-1 rounded-lg text-[9px] font-black uppercase shadow-inner outline-none" placeholder="Nombre Discursante..." value={s.asig.discNom || ""} onChange={e => updateAsig(sIdx, 'discNom', e.target.value)} />
+                        <input className="w-full text-center border p-1 rounded-lg text-[8px] italic shadow-inner" placeholder="Congregación..." value={s.asig.weDiscOrig || ""} onChange={e => updateAsig(sIdx, 'weDiscOrig', e.target.value)} />
+                      </div>
+                    ) : (
+                      <div className="py-1 leading-tight">
+                        <p className="text-base font-serif italic font-black text-slate-800">"{s.asig.discTit || 'TÍTULO PENDIENTE'}"</p>
+                        <p className="text-xs font-black uppercase text-blue-900 mt-1 leading-none tracking-tight leading-none tracking-tight leading-none tracking-tight">{s.asig.discNom || 'NOMBRE'}</p>
+                        <p className="text-[9px] text-slate-500 font-bold italic tracking-tighter leading-none italic leading-none tracking-widest leading-none tracking-tighter leading-none tracking-tighter leading-none italic shadow-none tracking-widest uppercase italic tracking-widest uppercase">({s.asig.weDiscOrig || "General Pinedo"})</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="bg-white p-6 rounded-3xl border border-blue-100 shadow-sm leading-none shadow-md">
+                   <p className="text-[9px] font-black text-blue-800 uppercase mb-4 tracking-widest text-center border-b pb-1 underline italic leading-none shadow-none px-4">Estudio de La Atalaya</p>
+                   <div className="text-center mb-4 leading-none px-4">
+                      {s.asig.atImg && <img src={s.asig.atImg} className="h-32 mx-auto rounded-xl mb-3 shadow-md object-cover w-full border-2 border-white shadow-none shadow-md" alt="Atalaya" />}
+                      <input className="text-[9px] p-1 border w-full rounded-lg mb-2 print:hidden shadow-inner outline-none shadow-none" placeholder="Pegar URL Imagen Atalaya" value={s.asig.atImg || ""} onChange={e => updateAsig(sIdx, 'atImg', e.target.value)} />
+                      <input className="text-[9px] p-1 border w-full rounded-lg mb-2 print:hidden shadow-inner outline-none shadow-none" placeholder="Título artículo..." value={s.asig.atTitulo || ""} onChange={e => updateAsig(sIdx, 'atTitulo', e.target.value)} />
+                      <p className="text-[10px] font-black text-blue-900 italic leading-snug px-4 uppercase tracking-tighter leading-none shadow-none px-4 leading-none tracking-tighter leading-tight italic">"{s.asig.atTitulo || "Artículo de Estudio"}"</p>
+                   </div>
+                   <div className="space-y-0.5">
+                    <SelectRow label="Conductor" val={s.asig.atCond} options={getFiltered("atCond")} edit={editMode} onSelect={v => updateAsig(sIdx, 'atCond', v)} />
+                    <SelectRow label="Lector" val={s.asig.atLect} options={getFiltered("atLect") || getFiltered("ebLect")} edit={editMode} onSelect={v => updateAsig(sIdx, 'atLect', v)} />
+                   </div>
+                </div>
+
+                <div className="pt-6 border-t-2 border-double border-slate-200 mt-auto leading-none italic font-bold">
+                  <div className="flex items-center gap-2 mb-2 text-slate-400 font-black leading-none"><Settings size={18}/><h3 className="uppercase text-[9px] tracking-widest leading-none font-bold italic tracking-widest uppercase shadow-none leading-none shadow-none">Asignaciones Mecánicas</h3></div>
+                  <div className="space-y-0.5 bg-slate-50 p-6 rounded-[2rem] border shadow-inner">
+                    <SelectRow label="Entrada" val={s.asig.atEn} options={getFiltered("meca")} edit={editMode} onSelect={v => updateAsig(sIdx, 'atEn', v)} />
+                    <SelectRow label="Plataforma" val={s.asig.atPl} options={getFiltered("meca")} edit={editMode} onSelect={v => updateAsig(sIdx, 'atPl', v)} />
+                    <SelectRow label="Micro 1" val={s.asig.mic1} options={getFiltered("meca")} edit={editMode} onSelect={v => updateAsig(sIdx, 'mic1', v)} />
+                    <SelectRow label="Micro 2" val={s.asig.mic2} options={getFiltered("meca")} edit={editMode} onSelect={v => updateAsig(sIdx, 'mic2', v)} />
+                    <SelectRow label="Audio/Video" val={s.asig.av} options={getFiltered("meca")} edit={editMode} onSelect={v => updateAsig(sIdx, 'av', v)} />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+const SelectRow = ({ label, val, options, edit, onSelect }) => (
+  <div className="flex justify-between items-center py-1 border-b border-slate-50 last:border-0 min-h-[35px]">
+    <span className="text-[9px] font-black text-slate-300 uppercase pr-4 leading-none tracking-tighter leading-none tracking-tighter leading-none tracking-tighter">{label}</span>
+    {edit ? (
+      <select className="text-[11px] border border-slate-100 rounded-lg bg-white w-44 p-0.5 font-bold outline-none shadow-sm shadow-inner shadow-none shadow-none" value={val || ""} onChange={e => onSelect(e.target.value)}>
+        <option value="">-- SELEC. --</option>
+        {options?.map(o => <option key={o.n} value={o.n}>{o.n}</option>)}
+      </select>
+    ) : <span className="text-[12px] font-black text-slate-900 tracking-tighter leading-none italic italic tracking-tighter leading-none italic shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none">{val || "---"}</span>}
+  </div>
+);
+
+const SectionHeader = ({ title, color }) => <div className={`${color} text-white text-[9px] font-black px-4 py-1 rounded-lg uppercase mb-2 shadow-md leading-none tracking-widest leading-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none`}>{title}</div>;
+
+export default App;
