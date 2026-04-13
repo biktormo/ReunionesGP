@@ -223,7 +223,7 @@ const App = () => {
                 body { background: white; }
                 .print-hidden { display: none !important; }
                 .tooltip { display: none !important; }
-                .page-break { page-break-before: always; height: 297mm; padding: 10mm 15mm !important; margin: 0 !important; border: none !important; box-shadow: none !important; }
+                .page-break { page-break-before: always; height: 297mm; padding: 4mm 15mm !important; margin: 0 !important; border: none !important; box-shadow: none !important; }
                 .page-break:first-of-type { page-break-before: avoid; }
             }
             .tooltip { visibility: hidden; opacity: 0; transition: 0.1s; position: absolute; z-index: 50; }
