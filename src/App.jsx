@@ -285,8 +285,7 @@ const App = () => {
                 </div>
 
                 <div className="space-y-0.5">
-                    <SelectRow label="Presidente" val={s.asig.presi} options={getFiltered("presi")} edit={editMode} onSelect={v => updateAsig(sIdx, 'presi', v)} />
-                    <SelectRow label="Oración Inicial" val={s.asig.orIn} options={getFiltered("ora")} edit={editMode} onSelect={v => updateAsig(sIdx, 'orIn', v)} />
+                    <SelectRow label="Presidente (oracion inicial)" val={s.asig.presi} options={getFiltered("presi")} edit={editMode} onSelect={v => updateAsig(sIdx, 'presi', v)} />
                 </div>
 
                 <SectionHeader title="Tesoros de la Biblia" color="bg-[#007B5E]" />
