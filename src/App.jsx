@@ -360,6 +360,20 @@ const App = () => {
                         <p className="text-[9px] text-slate-500 font-bold italic tracking-tighter leading-none italic leading-none shadow-none tracking-widest uppercase">({s.asig.weDiscOrig || "General Pinedo"})</p>
                       </div>
                     )}
+                    {/* Solo Admin ve los campos para el segundo discurso */}
+                    {role === 'admin' && editMode && (
+                      <div className="mt-4 p-4 bg-blue-50 border-2 border-dashed border-blue-200 rounded-2xl">
+                        <p className="text-[10px] font-black text-blue-800 uppercase mb-2">Segundo Discurso (Opcional)</p>
+                        <div className="space-y-2">
+                          <input className="w-full p-1 text-xs border rounded" placeholder="Título 2do Discurso" value={s.asig.discTit2 || ""} onChange={e => updateAsig(sIdx, 'discTit2', e.target.value)} />
+                          <input className="w-full p-1 text-xs border rounded" placeholder="Nombre Discursante 2" value={s.asig.discNom2 || ""} onChange={e => updateAsig(sIdx, 'discNom2', e.target.value)} />
+                          <div className="flex gap-2">
+                            <input className="w-1/2 p-1 text-xs border rounded" placeholder="Canción" value={s.asig.discCan2 || ""} onChange={e => updateAsig(sIdx, 'discCan2', e.target.value)} />
+                            <input className="w-1/2 p-1 text-xs border rounded" placeholder="Oración" value={s.asig.discOra2 || ""} onChange={e => updateAsig(sIdx, 'discOra2', e.target.value)} />
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -380,6 +394,21 @@ const App = () => {
                     <SelectRow label="Lector" val={s.asig.atLect} options={getFiltered("atLect") || getFiltered("ebLect")} edit={editMode} onSelect={v => updateAsig(sIdx, 'atLect', v)} />
                    </div>
                 </div>
+
+                {/* Caja de Segundo Discurso: Se activa solo si hay título */}
+                {s.asig.discTit2 && !editMode && (
+                  <div className="mt-4 bg-white p-6 rounded-3xl border-2 border-blue-100 shadow-sm leading-none">
+                    <p className="text-[9px] font-black text-blue-600 uppercase tracking-widest text-center mb-3">Discurso Adicional / Especial</p>
+                    <div className="text-center space-y-2">
+                      <p className="text-base font-serif italic font-black text-slate-800 leading-tight">"{s.asig.discTit2}"</p>
+                      <p className="text-xs font-black uppercase text-blue-900">{s.asig.discNom2}</p>
+                      <div className="flex justify-around pt-2 border-t text-[10px] font-black uppercase text-slate-500">
+                          <span>Canción {s.asig.discCan2}</span>
+                          <span>Oración: {s.asig.discOra2}</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 <div className="pt-6 border-t-2 border-double border-slate-200 mt-auto leading-none">
                   <div className="flex items-center gap-2 mb-2 text-slate-400 font-black leading-none italic font-bold tracking-widest uppercase leading-none shadow-none"><Settings size={18}/><h3 className="uppercase text-[9px] tracking-widest leading-none font-bold">Asignaciones Mecánicas</h3></div>
