@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
+import JSZip from 'jszip'; 
 import { jsPDF } from "jspdf";
 import html2canvas from "html2canvas";
 import { 
   Printer, Music, Mic2, BookOpen, Users, Settings, LogOut, 
-  Edit3, Key, Mail, UserCheck, ClipboardPaste, Info, Save, Trash2, RotateCcw
+  Edit3, Key, Mail, UserCheck, ClipboardPaste, Info, Save, Trash2, RotateCcw, Brush
 } from 'lucide-react';
 
-// --- CONFIGURACIÓN FIREBASE (REUNIONES-GP) ---
+// --- CONFIGURACIÓN FIREBASE (TUS CREDENCIALES) ---
 import { initializeApp } from "firebase/app";
 import { getFirestore, doc, onSnapshot, setDoc } from "firebase/firestore";
 import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "firebase/auth";
@@ -64,6 +65,8 @@ const MIEMBROS = [
   { n: "Torres Noelia", s: "F", r: [] }
 ].sort((a, b) => a.n.localeCompare(b.n));
 
+const OP_LIMPIEZA = [{n: "Grupo 1"}, {n: "Grupo 2"}, {n: "Limpieza Profunda"}];
+
 const App = () => {
   const [user, setUser] = useState(null);
   const [role, setRole] = useState('member');
@@ -71,19 +74,13 @@ const App = () => {
   const [loginPass, setLoginPass] = useState('');
   const [loading, setLoading] = useState(true);
   const [mes, setMes] = useState(new Date().getMonth());
-  const [anio, setAnio] = useState(2026);
+  const [anio, setAnio] = useState(new Date().getFullYear());
   const [semanas, setSemanas] = useState([]);
   const [editMode, setEditMode] = useState(false);
   const [showMeta, setShowMeta] = useState(false);
 
-  const getFiltered = (rol, type = "normal") => {
-    if (type === "disc") return MIEMBROS.filter(m => m.s === "M");
-    if (rol === "all") return MIEMBROS;
-    return MIEMBROS.filter(m => m.r.includes(rol));
-  };
-
   useEffect(() => {
-    onAuthStateChanged(auth, (u) => {
+    const unsubAuth = onAuthStateChanged(auth, (u) => {
       if (u) {
         setUser(u);
         if (u.email === "biktormo@gmail.com") setRole('admin');
@@ -92,12 +89,12 @@ const App = () => {
       } else { setUser(null); setRole('member'); }
       setLoading(false);
     });
+    return () => unsubAuth();
   }, []);
 
   useEffect(() => {
     if (!user) return;
-    const docId = `${anio}-${mes + 1}`;
-    const unsub = onSnapshot(doc(db, "programas", docId), (docSnap) => {
+    const unsubData = onSnapshot(doc(db, "programas", `${anio}-${mes + 1}`), (docSnap) => {
       let base = generarSemanasBase(mes, anio);
       if (docSnap.exists()) {
         const cloud = docSnap.data().semanas;
@@ -108,7 +105,7 @@ const App = () => {
         setSemanas(fusion);
       } else { setSemanas(base); }
     });
-    return () => unsub();
+    return () => unsubData();
   }, [user, mes, anio]);
 
   const generarSemanasBase = (m, a) => {
@@ -121,15 +118,16 @@ const App = () => {
       const dKey = current.toISOString().split('T')[0];
       let end = new Date(current); end.setDate(current.getDate() + 6);
       
-      const mesIni = current.toLocaleString('es', { month: 'long' });
-      const mesFin = end.toLocaleString('es', { month: 'long' });
-      const rangoTexto = mesIni === mesFin 
-        ? `${current.getDate()}-${end.getDate()} DE ${mesIni.toUpperCase()}`
-        : `${current.getDate()} DE ${mesIni.toUpperCase()} A ${end.getDate()} DE ${mesFin.toUpperCase()}`;
+      const mIni = current.toLocaleString('es-AR', { month: 'long' }).toUpperCase();
+      const mFin = end.toLocaleString('es-AR', { month: 'long' }).toUpperCase();
+      
+      const rango = (current.getMonth() === end.getMonth()) 
+        ? `${current.getDate()}-${end.getDate()} DE ${mIni}`
+        : `${current.getDate()} DE ${mIni} AL ${end.getDate()} DE ${mFin}`;
 
       temp.push({
         id: current.getTime(), dateKey: dKey,
-        rango: rangoTexto,
+        rango: rango,
         meta: { lect: "LECTURA SEMANAL", can1: "0", can2: "0", can3: "0", tesoros: [], maestros: [], vida: [], atT: "Título Atalaya..." },
         asig: {}
       });
@@ -142,31 +140,23 @@ const App = () => {
     if (!text) return;
     const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
     const n = [...semanas];
-    
     let currentItems = [];
     let currentItem = null;
-    let sectionState = "START"; // START, T, M, V
-    let songsFound = [];
-    let possibleLectura = "LECTURA SEMANAL";
+    let sectionState = "START"; 
+    let songs = [];
+    let weekReading = "";
 
     lines.forEach((line, idx) => {
         const up = line.toUpperCase();
-        
-        // Detección de Secciones reales por encabezado
-        if (up.includes("TESOROS DE LA BIBLIA")) sectionState = "T";
-        else if (up.includes("SEAMOS MEJORES MAESTROS")) sectionState = "M";
-        else if (up.includes("NUESTRA VIDA CRISTIANA")) sectionState = "V";
+        if (up.includes("TESOROS")) sectionState = "T";
+        else if (up.includes("SEAMOS MEJORES")) sectionState = "M";
+        else if (up.includes("NUESTRA VIDA")) sectionState = "V";
 
-        // Detección de lectura (Línea arriba de la primera canción)
-        if (line.toLowerCase().includes("canción") && idx > 0 && sectionState === "START") {
-            possibleLectura = lines[idx-1];
-        }
+        if (line.toLowerCase().includes("canción") && idx > 0 && sectionState === "START") weekReading = lines[idx-1];
 
-        // Extracción de canciones (Regex estricto)
         const canMatch = line.match(/\bCanci[óo]n\s+(\d+)\b/i);
-        if (canMatch) songsFound.push(canMatch[1]);
+        if (canMatch) songs.push(canMatch[1]);
 
-        // Detección de Items numéricos
         if (line.match(/^\d\./)) {
             if (currentItem) currentItems.push(currentItem);
             currentItem = { t: line, d: "", sec: sectionState };
@@ -176,26 +166,14 @@ const App = () => {
     });
     if (currentItem) currentItems.push(currentItem);
 
-    // Reparto por estado de sección (ignora el número de item, manda el orden)
     n[sIdx].meta.tesoros = currentItems.filter(i => i.sec === "T");
     n[sIdx].meta.maestros = currentItems.filter(i => i.sec === "M");
     n[sIdx].meta.vida = currentItems.filter(i => i.sec === "V");
-    
-    n[sIdx].meta.lect = possibleLectura.toUpperCase();
-    n[sIdx].meta.can1 = songsFound[0] || "0";
-    n[sIdx].meta.can2 = songsFound[1] || "0";
-    n[sIdx].meta.can3 = songsFound[2] || "0";
+    n[sIdx].meta.lect = weekReading.toUpperCase();
+    n[sIdx].meta.can1 = songs[0] || "0";
+    n[sIdx].meta.can2 = songs[1] || "0";
+    n[sIdx].meta.can3 = songs[2] || "0";
 
-    setSemanas(n);
-    setDoc(doc(db, "programas", `${anio}-${mes + 1}`), { semanas: n });
-    alert("¡Estructura sincronizada!");
-  };
-
-  const clearWeek = (sIdx) => {
-    if(!window.confirm("¿Borrar todo?")) return;
-    const n = [...semanas];
-    n[sIdx].meta = { lect: "LECTURA SEMANAL", can1: "0", can2: "0", can3: "0", tesoros: [], maestros: [], vida: [], atT: "Título Atalaya..." };
-    n[sIdx].asig = {};
     setSemanas(n);
     setDoc(doc(db, "programas", `${anio}-${mes + 1}`), { semanas: n });
   };
@@ -206,6 +184,14 @@ const App = () => {
     setDoc(doc(db, "programas", `${anio}-${mes + 1}`), { semanas: n });
   };
 
+  const clearWeek = (sIdx) => {
+    if(!window.confirm("¿Borrar contenido?")) return;
+    const n = [...semanas];
+    n[sIdx].asig = {};
+    setSemanas(n);
+    setDoc(doc(db, "programas", `${anio}-${mes + 1}`), { semanas: n });
+  };
+
   const handleLogin = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -213,15 +199,30 @@ const App = () => {
     catch (err) { alert("Credenciales incorrectas"); setLoading(false); }
   };
 
-  if (loading) return <div className="h-screen flex items-center justify-center bg-slate-900 text-blue-400 font-black animate-pulse">Pinedo App...</div>;
+  const printSingleWeek = (id) => {
+    const el = document.getElementById(`week-${id}`);
+    html2canvas(el, { scale: 2 }).then(canvas => {
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      pdf.addImage(canvas.toDataURL('image/png'), 'PNG', 10, 10, 190, 0);
+      pdf.save(`Semana_${id}.pdf`);
+    });
+  };
+
+  const getFiltered = (rol, type = "normal") => {
+    if (type === "disc") return MIEMBROS.filter(m => m.s === "M");
+    if (rol === "all") return MIEMBROS;
+    return MIEMBROS.filter(m => m.r.includes(rol));
+  };
+
+  if (loading) return <div className="h-screen flex items-center justify-center bg-slate-900 text-blue-400 font-black animate-pulse">REUNIONES GP...</div>;
 
   if (!user) return (
     <div className="min-h-screen bg-slate-900 flex items-center justify-center p-6">
-      <form onSubmit={handleLogin} className="bg-white p-12 rounded-[3.5rem] shadow-2xl w-full max-w-md space-y-6 border-t-[12px] border-blue-600 text-center">
-        <h2 className="text-4xl font-black text-slate-800 uppercase tracking-tighter leading-none">Pinedo App</h2>
-        <input type="email" placeholder="Email" className="w-full p-4 bg-slate-50 border rounded-2xl outline-none font-bold shadow-inner" onChange={e => setLoginMail(e.target.value)} />
-        <input type="password" placeholder="Clave" className="w-full p-4 bg-slate-50 border rounded-2xl outline-none font-bold shadow-inner" onChange={e => setLoginPass(e.target.value)} />
-        <button type="submit" className="w-full bg-blue-600 text-white py-4 rounded-2xl font-black uppercase tracking-widest shadow-lg">Entrar</button>
+      <form onSubmit={handleLogin} className="bg-white p-12 rounded-[3rem] shadow-2xl w-full max-w-md space-y-6 border-t-[12px] border-blue-600 text-center">
+        <h2 className="text-4xl font-black text-slate-800 uppercase tracking-tighter">Reuniones GP</h2>
+        <input type="email" placeholder="Email" className="w-full p-4 bg-slate-50 border rounded-2xl outline-none font-bold" onChange={e => setLoginMail(e.target.value)} />
+        <input type="password" placeholder="Clave" className="w-full p-4 bg-slate-50 border rounded-2xl outline-none font-bold" onChange={e => setLoginPass(e.target.value)} />
+        <button type="submit" className="w-full bg-blue-600 text-white py-4 rounded-2xl font-black uppercase tracking-widest shadow-lg active:scale-95 transition-all">Entrar</button>
       </form>
     </div>
   );
@@ -233,25 +234,17 @@ const App = () => {
                 @page { size: A4; margin: 0; }
                 body { background: white; }
                 .print-hidden { display: none !important; }
-                .page-break { 
-                    page-break-before: always; 
-                    height: 296mm;
-                    padding: 10mm 15mm !important;
-                    margin: 0 !important;
-                    box-shadow: none !important;
-                    border: none !important;
-                }
+                .page-break { page-break-before: always; height: 297mm; padding: 10mm 15mm !important; margin: 0 !important; border: none !important; box-shadow: none !important; }
                 .page-break:first-of-type { page-break-before: avoid; }
+                .official-style select { display: none; }
             }
-            .tooltip { visibility: hidden; opacity: 0; transition: 0.1s; position: absolute; z-index: 50; }
-            .has-tooltip:hover .tooltip { visibility: visible; opacity: 1; }
         `}</style>
 
       {/* NAVBAR */}
       <div className="bg-white border-b sticky top-0 z-50 p-4 shadow-sm flex justify-between items-center print-hidden">
         <div className="flex gap-4">
           <div className="px-4 py-1.5 bg-blue-600 text-white rounded-full font-black text-[10px] uppercase shadow-sm flex items-center gap-2"><UserCheck size={14}/> {role}</div>
-          <select className="border-2 border-slate-100 p-1.5 rounded-xl font-black bg-slate-50 text-xs shadow-sm" value={mes} onChange={e => setMes(Number(e.target.value))}>
+          <select className="border-2 border-slate-100 p-1.5 rounded-xl font-black bg-slate-50 text-xs shadow-sm outline-none" value={mes} onChange={e => setMes(Number(e.target.value))}>
             {["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"].map((m,i)=><option key={i} value={i}>{m}</option>)}
           </select>
         </div>
@@ -264,45 +257,49 @@ const App = () => {
           {role === 'admin' && (
             <button onClick={() => setShowMeta(!showMeta)} className={`px-5 py-2 rounded-full font-black text-[10px] uppercase border shadow-md transition-all ${showMeta ? 'bg-yellow-500 text-white' : 'bg-white'}`}>ESTRUCTURA</button>
           )}
-          <button onClick={() => window.print()} className="bg-emerald-600 text-white px-6 py-2 rounded-full font-black text-[10px] shadow-lg uppercase">PDF</button>
-          <button onClick={() => { signOut(auth); setUser(null); }} className="bg-slate-100 p-2 rounded-full transition-colors hover:bg-red-500 hover:text-white"><LogOut size={18}/></button>
+          <button onClick={() => window.print()} className="bg-emerald-600 text-white px-6 py-2 rounded-full font-black text-[10px] shadow-lg uppercase">PDF MENSUAL</button>
+          <button onClick={() => { signOut(auth); setUser(null); }} className="bg-slate-100 text-slate-400 p-2 rounded-full hover:bg-red-500 hover:text-white transition-all"><LogOut size={18}/></button>
         </div>
       </div>
 
       <div id="print-area" className="max-w-4xl mx-auto space-y-4">
         {/* TITULO SOLO PAGINA 1 */}
         <div className="text-center border-b-4 border-slate-900 pb-2 pt-10 mb-4 px-10">
-            <h1 className="text-xl font-black text-slate-900 uppercase">Programa de asignaciones para las Reuniones</h1>
-            <p className="text-sm font-bold text-blue-800 uppercase tracking-widest mt-1 italic leading-none">Congregación General Pinedo</p>
+            <h1 className="text-2xl font-black text-slate-900 uppercase">Programa de asignaciones para las Reuniones</h1>
+            <p className="text-sm font-bold text-blue-800 uppercase tracking-widest mt-1 italic">Congregación General Pinedo</p>
         </div>
 
         {semanas.map((s, sIdx) => (
-          <div key={s.id} className="bg-white border border-slate-200 page-break rounded-[2.5rem] overflow-hidden mb-8 shadow-sm relative italic">
-            <div className="bg-slate-900 p-3 text-center text-white text-xl font-black tracking-widest uppercase italic">{s.rango}</div>
+          <div key={s.id} id={`week-${s.id}`} className="bg-white border border-slate-200 page-break rounded-[2.5rem] overflow-hidden mb-10 shadow-sm relative italic">
+            
+            <div className="bg-slate-900 p-3 text-center text-white text-xl font-black tracking-widest uppercase italic flex justify-between px-10 items-center">
+                <span>{s.rango}</span>
+                <button onClick={() => printSingleWeek(s.id)} className="print-hidden p-1 bg-white/10 rounded-lg hover:bg-white/20"><Printer size={16}/></button>
+            </div>
             
             {showMeta && role === 'admin' && (
-              <div className="bg-yellow-50 p-6 border-b-4 border-yellow-400 print:hidden flex flex-col gap-2">
-                 <div className="flex justify-between items-center">
-                    <p className="text-[10px] font-black text-yellow-800 uppercase tracking-widest leading-none">Pega el contenido de JW.ORG para esta semana:</p>
-                    <button onClick={() => clearWeek(sIdx)} className="text-red-600 flex items-center gap-1 text-[9px] font-black uppercase hover:underline flex items-center gap-1"><RotateCcw size={14}/> Limpiar Semana</button>
-                 </div>
-                 <textarea className="w-full h-16 p-3 rounded-2xl border-2 border-yellow-200 text-[10px] font-mono shadow-inner outline-none bg-white/50 focus:bg-white transition-all" 
-                    placeholder="Pega el texto aquí..." onPaste={(e) => processPastedText(sIdx, e.clipboardData.getData('Text'))}/>
+              <div className="bg-yellow-50 p-6 border-b-4 border-yellow-400 print-hidden flex flex-col gap-2">
+                 <textarea className="w-full h-20 p-3 rounded-2xl border-2 border-yellow-200 text-[10px] font-mono shadow-inner outline-none bg-white/50 focus:bg-white" 
+                    placeholder="Pega el texto de JW.org aquí..." onPaste={(e) => processPastedText(sIdx, e.clipboardData.getData('Text'))}/>
+                 <button onClick={() => clearWeek(sIdx)} className="text-red-600 text-[9px] font-bold uppercase self-end hover:underline">Limpiar Estructura</button>
               </div>
             )}
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-10 p-10 leading-none">
-              
-              {/* --- VIDA Y MINISTERIO --- */}
-              <div className="space-y-4 leading-none">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-10 p-10 leading-none relative">
+              {editMode && (
+                <button onClick={() => updateAsig(sIdx, 'clearAll', '')} className="absolute top-2 right-2 p-2 bg-red-50 text-red-400 rounded-full hover:bg-red-600 hover:text-white transition-all print-hidden shadow-sm"><Trash2 size={16}/></button>
+              )}
+
+              {/* --- COLUMNA 1: VIDA Y MINISTERIO --- */}
+              <div className="space-y-4">
                 <div className="flex items-center gap-3 border-b-2 border-[#007B5E] pb-1 text-[#007B5E]">
                   <BookOpen size={24} />
                   <h3 className="font-black uppercase text-[11px] italic tracking-tighter leading-none">Vida y Ministerio Cristianos</h3>
                 </div>
 
-                <div className="flex justify-between font-black text-[9px] bg-emerald-50 p-3 border border-emerald-100 rounded-xl leading-none shadow-inner">
-                    <span className="flex items-center gap-1 font-black leading-none"><Music size={12}/> CANCIÓN {s.meta.can1}</span>
-                    <span className="uppercase text-slate-700 tracking-tighter leading-none font-bold tracking-widest">{s.meta.lect}</span>
+                <div className="flex justify-between font-black text-[9px] bg-emerald-50 p-3 border border-emerald-100 rounded-xl leading-none">
+                    <span className="flex items-center gap-1"><Music size={12}/> CANCIÓN {s.meta.can1}</span>
+                    <span className="uppercase text-slate-700 tracking-tighter font-bold">{s.meta.lect}</span>
                 </div>
 
                 <div className="space-y-0.5">
@@ -314,45 +311,45 @@ const App = () => {
                 <div className="space-y-3 px-1">
                   {s.meta.tesoros?.map((t, tIdx) => (
                     <div key={tIdx} className="relative has-tooltip">
-                        <p className="text-[11px] font-black text-emerald-950 border-b pb-0.5 uppercase cursor-help leading-tight leading-none">{t.t}</p>
-                        <div className="tooltip bg-black text-white text-[10px] p-2 rounded-lg w-64 -top-2 left-full ml-2 shadow-xl border">{t.d}</div>
+                        <p className="text-[11px] font-black text-emerald-950 border-b pb-0.5 uppercase cursor-help leading-tight">{t.t}</p>
+                        <div className="tooltip bg-black text-white text-[10px] p-2 rounded-lg w-64 -top-2 left-full ml-2 shadow-xl border leading-snug">{t.d}</div>
                         <SelectRow label="Asignado" val={s.asig[`t${tIdx}`]} options={MIEMBROS.filter(m => m.r.includes(tIdx === 2 ? "t3" : "t12"))} edit={editMode} onSelect={v => updateAsig(sIdx, `t${tIdx}`, v)} />
                     </div>
                   ))}
                 </div>
 
                 <SectionHeader title="Seamos Mejores Maestros" color="bg-[#C18B00]" />
-                <div className="space-y-2 mb-2 leading-none">
+                <div className="space-y-2 mb-6 leading-none">
                   {s.meta.maestros?.map((m, mIdx) => (
-                    <div key={mIdx} className="border-l-2 border-amber-300 pl-3 py-1 bg-amber-50/50 rounded-r-lg mb-1 relative has-tooltip">
-                      <p className="text-[10px] font-black text-amber-800 uppercase cursor-help leading-tight leading-none tracking-tight">{m.t}</p>
-                      <div className="tooltip bg-amber-900 text-white text-[10px] p-2 rounded-lg w-64 -top-2 left-full ml-2 shadow-xl border">{m.d}</div>
+                    <div key={mIdx} className="border-l-2 border-amber-300 pl-3 py-1 bg-amber-50/30 rounded-r-lg mb-1 relative has-tooltip">
+                      <p className="text-[10px] font-black text-amber-800 uppercase cursor-help leading-tight">{m.t}</p>
+                      <div className="tooltip bg-amber-900 text-white text-[10px] p-2 rounded-lg w-64 -top-2 left-full ml-2 shadow-xl border leading-snug">{m.d}</div>
                       {!m.t.toLowerCase().includes("discurso") ? (
                         <>
                           <SelectRow label="Estudiante" val={s.asig[`m${mIdx}`]} options={MIEMBROS} edit={editMode} onSelect={v => updateAsig(sIdx, `m${mIdx}`, v)} />
                           <SelectRow label="Ayudante" val={s.asig[`m${mIdx}A`]} options={MIEMBROS} edit={editMode} onSelect={v => updateAsig(sIdx, `m${mIdx}A`, v)} />
                         </>
                       ) : (
-                        <SelectRow label="Discursante" val={s.asig[`m${mIdx}`]} options={MIEMBROS.filter(m => m.s === "M")} edit={editMode} onSelect={v => updateAsig(sIdx, `m${mIdx}`, v)} />
+                        <SelectRow label="Discursante" val={s.asig[`m${mIdx}`]} options={getFiltered("", "disc")} edit={editMode} onSelect={v => updateAsig(sIdx, `m${mIdx}`, v)} />
                       )}
                     </div>
                   ))}
                 </div>
 
                 <SectionHeader title="Nuestra Vida Cristiana" color="bg-[#8A1A11]" />
-                <div className="space-y-4">
+                <div className="space-y-4 leading-none">
                     <div className="font-black text-[9px] flex items-center gap-2 leading-none"><Music size={12} className="text-red-600"/> CANCIÓN {s.meta.can2}</div>
                     {s.meta.vida?.map((v, vIdx) => (
-                       <div key={vIdx} className="relative has-tooltip">
-                          <p className="text-[10px] font-black text-red-950 uppercase border-b pb-0.5 cursor-help leading-tight leading-none tracking-tight leading-none">{v.t}</p>
-                          <div className="tooltip bg-red-900 text-white text-[10px] p-2 rounded-lg w-64 -top-2 left-full ml-2 shadow-xl">{v.d}</div>
+                       <div key={vIdx} className="relative has-tooltip leading-none">
+                          <p className="text-[10px] font-black text-red-950 uppercase border-b pb-0.5 cursor-help leading-tight">{v.t}</p>
+                          <div className="tooltip bg-red-900 text-white text-[10px] p-2 rounded-lg w-64 -top-2 left-full ml-2 shadow-xl leading-snug">{v.d}</div>
                           {v.t.toLowerCase().includes("estudio b") || v.t.toLowerCase().includes("viajante") ? (
                             <div className="bg-red-50 p-2.5 rounded-xl border border-red-100 mt-1 space-y-1 shadow-inner leading-none italic font-bold">
                                 <SelectRow label="Conductor" val={s.asig[`v${vIdx}_C`]} options={MIEMBROS.filter(m => m.r.includes("vida"))} edit={editMode} onSelect={vVal => updateAsig(sIdx, `v${vIdx}_C`, vVal)} />
-                                <SelectRow label="Lector" val={s.asig[`v${vIdx}_L`]} options={getFiltered("ebLect") || getFiltered("atLect")} edit={editMode} onSelect={vVal => updateAsig(sIdx, `v${vIdx}_L`, vVal)} />
+                                <SelectRow label="Lector" val={s.asig[`v${vIdx}_L`]} options={getFiltered("ebLect")} edit={editMode} onSelect={vVal => updateAsig(sIdx, `v${vIdx}_L`, vVal)} />
                             </div>
                           ) : (
-                            <SelectRow label="Asignado" val={s.asig[`v${vIdx}`]} options={getFiltered("vida")} edit={editMode} onSelect={vVal => updateAsig(sIdx, `v${vIdx}`, vVal)} />
+                            <SelectRow label="Asignado" val={s.asig[`v${vIdx}`]} options={MIEMBROS.filter(m => m.r.includes("vida"))} edit={editMode} onSelect={vVal => updateAsig(sIdx, `v${vIdx}`, vVal)} />
                           )}
                        </div>
                     ))}
@@ -365,45 +362,50 @@ const App = () => {
 
               {/* --- COLUMNA 2: FIN DE SEMANA --- */}
               <div className="space-y-6 flex flex-col h-full italic leading-none">
-                <div className="flex items-center gap-3 border-b-2 border-blue-800 pb-1 text-blue-800"><Users size={24}/><h3 className="font-black uppercase text-xs italic tracking-tighter leading-none tracking-widest leading-none tracking-tighter leading-none">Fin de Semana</h3></div>
+                <div className="flex items-center gap-3 border-b-2 border-blue-800 pb-1 text-blue-800 leading-none"><Users size={24}/><h3 className="font-black uppercase text-xs italic tracking-tighter leading-none tracking-widest leading-none">Reunión de Fin de Semana</h3></div>
                 
-                <div className="bg-white p-6 rounded-[2rem] border border-blue-100 shadow-sm mb-4 leading-none shadow-md">
-                  <SelectRow label="Presidente" val={s.asig.wePresi} options={getFiltered("wePresi")} edit={editMode} onSelect={v => updateAsig(sIdx, 'wePresi', v)} />
+                <div className="bg-white p-6 rounded-[2rem] border border-blue-100 shadow-sm mb-4 leading-none">
+                  <SelectRow label="Presidente" val={s.asig.wePresi} options={MIEMBROS.filter(m => m.r.includes("wePresi"))} edit={editMode} onSelect={v => updateAsig(sIdx, 'wePresi', v)} />
                   <div className="mt-6 pt-6 border-t-2 border-slate-50 text-center space-y-2 leading-none shadow-inner p-2 rounded-xl">
-                    <p className="text-[9px] font-black text-blue-600 uppercase tracking-widest leading-none tracking-widest leading-none tracking-widest leading-none">Discurso Público</p>
+                    <p className="text-[9px] font-black text-blue-600 uppercase tracking-widest leading-none tracking-widest leading-none tracking-widest">Discurso Público</p>
                     {editMode ? (
                       <div className="space-y-1">
-                        <input className="w-full text-center font-bold border p-1 rounded-lg text-[9px] italic shadow-inner outline-none" placeholder="Título Discurso..." value={s.asig.discTit || ""} onChange={e => updateAsig(sIdx, 'discTit', e.target.value)} />
-                        <input className="w-full text-center border p-1 rounded-lg text-[9px] font-black uppercase shadow-inner outline-none" placeholder="Nombre Discursante..." value={s.asig.discNom || ""} onChange={e => updateAsig(sIdx, 'discNom', e.target.value)} />
-                        <input className="w-full text-center border p-1 rounded-lg text-[8px] italic shadow-inner" placeholder="Congregación..." value={s.asig.weDiscOrig || ""} onChange={e => updateAsig(sIdx, 'weDiscOrig', e.target.value)} />
+                        <input className="w-full text-center border p-1 rounded-lg text-[9px] italic outline-none shadow-inner shadow-none" placeholder="Título Discurso..." value={s.asig.discTit || ""} onChange={e => updateAsig(sIdx, 'discTit', e.target.value)} />
+                        <input className="w-full text-center border p-1 rounded-lg text-[9px] font-black uppercase shadow-inner outline-none shadow-none" placeholder="Nombre Discursante..." value={s.asig.discNom || ""} onChange={e => updateAsig(sIdx, 'discNom', e.target.value)} />
+                        <input className="w-full text-center border p-1 rounded-lg text-[8px] italic shadow-inner outline-none shadow-none" placeholder="Congregación..." value={s.asig.weDiscOrig || ""} onChange={e => updateAsig(sIdx, 'weDiscOrig', e.target.value)} />
                       </div>
                     ) : (
-                      <div className="py-1 leading-tight">
-                        <p className="text-base font-serif italic font-black text-slate-800">"{s.asig.discTit || 'TÍTULO PENDIENTE'}"</p>
-                        <p className="text-xs font-black uppercase text-blue-900 mt-1 leading-none tracking-tight leading-none tracking-tight leading-none tracking-tight">{s.asig.discNom || 'NOMBRE'}</p>
-                        <p className="text-[9px] text-slate-500 font-bold italic tracking-tighter leading-none italic leading-none tracking-widest leading-none tracking-tighter leading-none tracking-tighter leading-none italic shadow-none tracking-widest uppercase italic tracking-widest uppercase">({s.asig.weDiscOrig || "General Pinedo"})</p>
+                      <div className="py-1 leading-tight italic">
+                        <p className="text-base font-serif italic font-black text-slate-800 leading-none">"{s.asig.discTit || 'TÍTULO PENDIENTE'}"</p>
+                        <p className="text-xs font-black uppercase text-blue-900 mt-2 leading-none">{s.asig.discNom || 'NOMBRE'}</p>
+                        <p className="text-[9px] text-slate-500 font-bold italic tracking-tighter leading-none italic leading-none tracking-widest leading-none tracking-tighter leading-none tracking-tighter leading-none leading-none shadow-none tracking-widest">({s.asig.weDiscOrig || "General Pinedo"})</p>
                       </div>
                     )}
                   </div>
                 </div>
 
-                <div className="bg-white p-6 rounded-3xl border border-blue-100 shadow-sm leading-none shadow-md">
+                <div className="bg-white p-6 rounded-3xl border border-blue-100 shadow-sm leading-none">
                    <p className="text-[9px] font-black text-blue-800 uppercase mb-4 tracking-widest text-center border-b pb-1 underline italic leading-none shadow-none px-4">Estudio de La Atalaya</p>
                    <div className="text-center mb-4 leading-none px-4">
                       {s.asig.atImg && <img src={s.asig.atImg} className="h-32 mx-auto rounded-xl mb-3 shadow-md object-cover w-full border-2 border-white shadow-none shadow-md" alt="Atalaya" />}
-                      <input className="text-[9px] p-1 border w-full rounded-lg mb-2 print:hidden shadow-inner outline-none shadow-none" placeholder="Pegar URL Imagen Atalaya" value={s.asig.atImg || ""} onChange={e => updateAsig(sIdx, 'atImg', e.target.value)} />
-                      <input className="text-[9px] p-1 border w-full rounded-lg mb-2 print:hidden shadow-inner outline-none shadow-none" placeholder="Título artículo..." value={s.asig.atTitulo || ""} onChange={e => updateAsig(sIdx, 'atTitulo', e.target.value)} />
-                      <p className="text-[10px] font-black text-blue-900 italic leading-snug px-4 uppercase tracking-tighter leading-none shadow-none px-4 leading-none tracking-tighter leading-tight italic">"{s.asig.atTitulo || "Artículo de Estudio"}"</p>
+                      {(role === 'admin' || role === 'editor') && editMode && (
+                        <>
+                          <input className="text-[9px] p-1 border w-full rounded-lg mb-2 print:hidden shadow-inner outline-none shadow-none" placeholder="Pegar URL Imagen Atalaya" value={s.asig.atImg || ""} onChange={e => updateAsig(sIdx, 'atImg', e.target.value)} />
+                          <input className="text-[9px] p-1 border w-full rounded-lg mb-2 print:hidden shadow-inner outline-none shadow-none" placeholder="Título artículo..." value={s.asig.atTitulo || ""} onChange={e => updateAsig(sIdx, 'atTitulo', e.target.value)} />
+                        </>
+                      )}
+                      <p className="text-[10px] font-black text-blue-900 italic leading-snug px-4 uppercase tracking-tighter leading-none shadow-none px-4 leading-none tracking-tighter leading-tight italic leading-none leading-none">"{s.asig.atTitulo || "Artículo de Estudio"}"</p>
                    </div>
                    <div className="space-y-0.5">
-                    <SelectRow label="Conductor" val={s.asig.atCond} options={getFiltered("atCond")} edit={editMode} onSelect={v => updateAsig(sIdx, 'atCond', v)} />
-                    <SelectRow label="Lector" val={s.asig.atLect} options={getFiltered("atLect") || getFiltered("ebLect")} edit={editMode} onSelect={v => updateAsig(sIdx, 'atLect', v)} />
+                    <SelectRow label="Conductor" val={s.asig.atCond} options={MIEMBROS.filter(m => m.r.includes("atCond"))} edit={editMode} onSelect={v => updateAsig(sIdx, 'atCond', v)} />
+                    <SelectRow label="Lector" val={s.asig.atLect} options={MIEMBROS.filter(m => m.r.includes("atLect") || m.n.includes("Cristian"))} edit={editMode} onSelect={v => updateAsig(sIdx, 'atLect', v)} />
                    </div>
                 </div>
 
-                <div className="pt-6 border-t-2 border-double border-slate-200 mt-auto leading-none italic font-bold">
-                  <div className="flex items-center gap-2 mb-2 text-slate-400 font-black leading-none"><Settings size={18}/><h3 className="uppercase text-[9px] tracking-widest leading-none font-bold italic tracking-widest uppercase shadow-none leading-none shadow-none">Asignaciones Mecánicas</h3></div>
-                  <div className="space-y-0.5 bg-slate-50 p-6 rounded-[2rem] border shadow-inner">
+                <div className="pt-6 border-t-2 border-double border-slate-200 mt-auto leading-none">
+                  <div className="flex items-center gap-2 mb-2 text-slate-400 font-black leading-none"><Settings size={18}/><h3 className="uppercase text-[9px] tracking-widest leading-none font-bold italic tracking-widest uppercase shadow-none leading-none shadow-none shadow-none">Asignaciones Mecánicas</h3></div>
+                  <div className="space-y-0.5 bg-slate-50 p-6 rounded-[2rem] border shadow-inner leading-none leading-none">
+                    <SelectRow label="Limpieza" val={s.asig.limp} options={OP_LIMPIEZA} edit={editMode} onSelect={v => updateAsig(sIdx, 'limp', v)} />
                     <SelectRow label="Entrada" val={s.asig.atEn} options={getFiltered("meca")} edit={editMode} onSelect={v => updateAsig(sIdx, 'atEn', v)} />
                     <SelectRow label="Plataforma" val={s.asig.atPl} options={getFiltered("meca")} edit={editMode} onSelect={v => updateAsig(sIdx, 'atPl', v)} />
                     <SelectRow label="Micro 1" val={s.asig.mic1} options={getFiltered("meca")} edit={editMode} onSelect={v => updateAsig(sIdx, 'mic1', v)} />
@@ -422,16 +424,16 @@ const App = () => {
 
 const SelectRow = ({ label, val, options, edit, onSelect }) => (
   <div className="flex justify-between items-center py-1 border-b border-slate-50 last:border-0 min-h-[35px]">
-    <span className="text-[9px] font-black text-slate-300 uppercase pr-4 leading-none tracking-tighter leading-none tracking-tighter leading-none tracking-tighter">{label}</span>
+    <span className="text-[9px] font-black text-slate-300 uppercase pr-4 leading-none tracking-tighter leading-none tracking-tighter leading-none tracking-tighter leading-none tracking-tighter leading-none tracking-tighter leading-none tracking-tighter leading-none tracking-tighter leading-none tracking-tighter leading-none tracking-tighter">{label}</span>
     {edit ? (
-      <select className="text-[11px] border border-slate-100 rounded-lg bg-white w-44 p-0.5 font-bold outline-none shadow-sm shadow-inner shadow-none shadow-none" value={val || ""} onChange={e => onSelect(e.target.value)}>
+      <select className="text-[11px] border border-slate-100 rounded-lg bg-white w-44 p-0.5 font-bold outline-none shadow-sm shadow-inner shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none" value={val || ""} onChange={e => onSelect(e.target.value)}>
         <option value="">-- SELEC. --</option>
         {options?.map(o => <option key={o.n} value={o.n}>{o.n}</option>)}
       </select>
-    ) : <span className="text-[12px] font-black text-slate-900 tracking-tighter leading-none italic italic tracking-tighter leading-none italic shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none">{val || "---"}</span>}
+    ) : <span className="text-[12px] font-black text-slate-900 tracking-tighter leading-none italic italic tracking-tighter leading-none italic shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none">{val || "---"}</span>}
   </div>
 );
 
-const SectionHeader = ({ title, color }) => <div className={`${color} text-white text-[9px] font-black px-4 py-1 rounded-lg uppercase mb-2 shadow-md leading-none tracking-widest leading-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none`}>{title}</div>;
+const SectionHeader = ({ title, color }) => <div className={`${color} text-white text-[9px] font-black px-4 py-1 rounded-lg uppercase mb-2 shadow-md leading-none tracking-widest leading-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none`}>{title}</div>;
 
 export default App;
