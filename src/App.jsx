@@ -153,6 +153,33 @@ const App = () => {
     let songs = [];
     let weekReading = "";
 
+        // Actualizar el texto de un tema específico
+    const updateMetaItem = (sIdx, section, itemIdx, field, val) => {
+      if (role !== 'admin') return;
+      const n = [...semanas];
+      n[sIdx].meta[section][itemIdx][field] = val;
+      setSemanas(n);
+      setDoc(doc(db, "programas", `${anio}-${mes + 1}`), { semanas: n });
+    };
+
+    // Eliminar un tema de una sección
+    const deleteMetaItem = (sIdx, section, itemIdx) => {
+      if (!window.confirm("¿Eliminar este tema permanentemente?")) return;
+      const n = [...semanas];
+      n[sIdx].meta[section].splice(itemIdx, 1);
+      setSemanas(n);
+      setDoc(doc(db, "programas", `${anio}-${mes + 1}`), { semanas: n });
+    };
+
+    // Añadir un tema manual
+    const addMetaItem = (sIdx, section) => {
+      const n = [...semanas];
+      if (!n[sIdx].meta[section]) n[sIdx].meta[section] = [];
+      n[sIdx].meta[section].push({ t: "Nuevo Tema", d: "Descripción aquí..." });
+      setSemanas(n);
+      setDoc(doc(db, "programas", `${anio}-${mes + 1}`), { semanas: n });
+    };
+
     lines.forEach((line, idx) => {
         const up = line.toUpperCase();
         if (up.includes("TESOROS")) sectionState = "T";
@@ -363,24 +390,51 @@ const App = () => {
                 <div className="space-y-4 leading-none">
                     <div className="font-black text-[9px] flex items-center gap-2 leading-none"><Music size={12} className="text-red-600"/> CANCIÓN {s.meta.can2}</div>
                     {s.meta.vida?.map((v, vIdx) => (
-                       <div key={vIdx} className="relative has-tooltip">
-                          <div className="flex justify-between items-start">
+                       {s.meta.vida?.map((v, vIdx) => (
+                        <div key={vIdx} className="relative has-tooltip mb-4">
+                          {/* MODO EDICIÓN MANUAL (Solo Admin en Estructura) */}
+                          {showMeta && role === 'admin' ? (
+                            <div className="bg-yellow-50 p-2 rounded-lg border border-yellow-200 mb-2">
+                              <div className="flex gap-2 mb-1">
+                                <input 
+                                  className="flex-1 text-[11px] font-black border-b bg-transparent outline-none uppercase"
+                                  value={v.t}
+                                  onChange={(e) => updateMetaItem(sIdx, 'vida', vIdx, 't', e.target.value)}
+                                />
+                                <button onClick={() => deleteMetaItem(sIdx, 'vida', vIdx)} className="text-red-500"><Trash2 size={14}/></button>
+                              </div>
+                              <textarea 
+                                className="w-full text-[9px] bg-transparent outline-none h-10 italic"
+                                value={v.d}
+                                onChange={(e) => updateMetaItem(sIdx, 'vida', vIdx, 'd', e.target.value)}
+                              />
+                            </div>
+                          ) : (
                             <p className="text-[10px] font-black text-red-950 uppercase border-b pb-0.5 cursor-help leading-tight">{v.t}</p>
-                            {showMeta && role === 'admin' && (
-                                <button onClick={() => moveItem(sIdx, 'vida', 'maestros', vIdx)} className="print:hidden text-amber-500"><ArrowUpCircle size={14}/></button>
-                            )}
-                          </div>
-                          <div className="tooltip bg-red-900 text-white text-[10px] p-2 rounded-lg w-64 -top-2 left-full ml-2 shadow-xl leading-snug">{v.d}</div>
+                          )}
+                      
+                          {/* TOOLTIP (Se mantiene igual) */}
+                          <div className="tooltip bg-red-900 text-white text-[10px] p-2 rounded-lg w-64 -top-2 left-full ml-2 shadow-xl">{v.d}</div>
+                      
+                          {/* LÓGICA DE SELECTORES (CONDUCTOR/LECTOR) */}
+                          {/* IMPORTANTE: Si el título NO contiene "estudio b", el campo Lector desaparecerá solo */}
                           {v.t.toLowerCase().includes("estudio b") || v.t.toLowerCase().includes("viajante") ? (
-                            <div className="bg-red-50 p-2.5 rounded-xl border border-red-100 mt-1 space-y-1 shadow-inner leading-none italic font-bold">
-                                <SelectRow label="Conductor" val={s.asig[`v${vIdx}_C`]} options={getFiltered("vida")} edit={editMode} onSelect={vVal => updateAsig(sIdx, `v${vIdx}_C`, vVal)} />
-                                <SelectRow label="Lector" val={s.asig[`v${vIdx}_L`]} options={getFiltered("ebLect") || getFiltered("atLect")} edit={editMode} onSelect={vVal => updateAsig(sIdx, `v${vIdx}_L`, vVal)} />
+                            <div className="bg-red-50 p-2.5 rounded-xl border border-red-100 mt-1 space-y-1 shadow-inner">
+                              <SelectRow label="Conductor" val={s.asig[`v${vIdx}_C`]} options={getFiltered("vida")} edit={editMode} onSelect={vVal => updateAsig(sIdx, `v${vIdx}_C`, vVal)} />
+                              <SelectRow label="Lector" val={s.asig[`v${vIdx}_L`]} options={getFiltered("ebLect")} edit={editMode} onSelect={vVal => updateAsig(sIdx, `v${vIdx}_L`, vVal)} />
                             </div>
                           ) : (
                             <SelectRow label="Asignado" val={s.asig[`v${vIdx}`]} options={getFiltered("vida")} edit={editMode} onSelect={vVal => updateAsig(sIdx, `v${vIdx}`, vVal)} />
                           )}
-                       </div>
-                    ))}
+                        </div>
+                      ))}
+                      
+                      {/* Botón para añadir tema manual (Solo Admin en Estructura) */}
+                      {showMeta && role === 'admin' && (
+                        <button onClick={() => addMetaItem(sIdx, 'vida')} className="text-red-700 flex items-center gap-1 text-[9px] font-bold uppercase mt-2 hover:underline">
+                          <PlusCircle size={14}/> Añadir Parte Local
+                        </button>
+                      )}
                     <div className="pt-2 border-t text-[9px] font-black flex justify-between uppercase leading-none italic shadow-none">
                         <span>CANCIÓN {s.meta.can3} Y ORACIÓN</span>
                         <SelectRow label="O. Final" val={s.asig.orFi} options={getFiltered("ora")} edit={editMode} onSelect={v => updateAsig(sIdx, 'orFi', v)} />
