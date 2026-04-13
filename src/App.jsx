@@ -272,7 +272,7 @@ const App = () => {
               </div>
             )}
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-10 p-10 leading-none">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-10 px-10 pb-10 pt-2 leading-none">
               <div className="space-y-4 leading-none">
                 <div className="flex items-center gap-3 border-b-2 border-[#007B5E] pb-1 text-[#007B5E]">
                   <BookOpen size={24} />
