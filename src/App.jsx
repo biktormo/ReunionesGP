@@ -53,7 +53,7 @@ const MIEMBROS = [
   { n: "Romero Jose", s: "M", r: ["ora", "t12", "t3", "vida", "wePresi", "meca"] },
   { n: "Romero Margarita", s: "F", r: [] },
   { n: "Sardina Clara", s: "F", r: [] },
-  { n: "Sardina Jonatan", s: "M", r: ["ora", "t3", "ebLect", "atLect", "meca"] },
+  { n: "Sardina Jonatan", s: "M", r: ["ora", "t3", "ebLect", "atLect", "meca", "vida", "wePresi"] },
   { n: "Sardina Mónica", s: "F", r: [] },
   { n: "Sardina Tizziana", s: "F", r: [] },
   { n: "Tinnirello Carmen", s: "F", r: [] },
