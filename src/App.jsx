@@ -4,7 +4,7 @@ import html2canvas from "html2canvas";
 import { 
   Printer, Music, Mic2, BookOpen, Users, Settings, LogOut, 
   Edit3, Key, Mail, UserCheck, ClipboardPaste, Info, Save, 
-  Trash2, RotateCcw, ArrowUpCircle, ArrowDownCircle, PlusCircle, Layout
+  Trash2, RotateCcw, ArrowUpCircle, ArrowDownCircle, PlusCircle
 } from 'lucide-react';
 
 // --- CONFIGURACIÓN FIREBASE ---
@@ -26,7 +26,7 @@ const db = getFirestore(app);
 const auth = getAuth(app);
 
 const MIEMBROS = [
-  { n: "Ascanio Nelson", s: "M", r: ["t3", "meca"] },
+  { n: "Ascanio Nelson", s: "M", r: ["t3"] },
   { n: "Ascanio Viviana", s: "F", r: [] },
   { n: "Baragaño Moira", s: "F", r: [] },
   { n: "Díaz Dante", s: "M", r: ["t3"] },
@@ -34,7 +34,7 @@ const MIEMBROS = [
   { n: "Gualtieri Mariel", s: "F", r: [] },
   { n: "Gonzalez Maria", s: "F", r: [] },
   { n: "Guzmán Angélica", s: "F", r: [] },
-  { n: "Huber José", s: "M", r: ["t3"] },
+  { n: "Huber José", s: "M", r: [] },
   { n: "Huber Nancy", s: "F", r: [] },
   { n: "Huber Walter", s: "M", r: ["ora", "t3", "ebLect", "atLect", "meca"] },
   { n: "Montes de Oca Pamela", s: "F", r: [] },
@@ -99,18 +99,19 @@ const App = () => {
 
   useEffect(() => {
     if (!user) return;
-    const unsubData = onSnapshot(doc(db, "programas", `${anio}-${mes + 1}`), (docSnap) => {
+    const docId = `${anio}-${mes + 1}`;
+    const unsub = onSnapshot(doc(db, "programas", docId), (docSnap) => {
       let base = generarSemanasBase(mes, anio);
       if (docSnap.exists()) {
         const cloud = docSnap.data().semanas;
         const fusion = base.map(s => {
           const match = cloud.find(c => c.dateKey === s.dateKey);
-          return match ? { ...s, asig: match.asig, meta: match.meta || s.meta } : s;
+          return match ? { ...s, asig: match.asig || {}, meta: match.meta || s.meta } : s;
         });
         setSemanas(fusion);
       } else { setSemanas(base); }
     });
-    return () => unsubData();
+    return () => unsub();
   }, [user, mes, anio]);
 
   const generarSemanasBase = (m, a) => {
@@ -122,11 +123,11 @@ const App = () => {
       if (current.getMonth() !== m && i > 3) break;
       const dKey = current.toISOString().split('T')[0];
       let end = new Date(current); end.setDate(current.getDate() + 6);
-      const mesIni = current.toLocaleString('es-AR', { month: 'long' });
-      const mesFin = end.toLocaleString('es-AR', { month: 'long' });
+      const mIni = current.toLocaleString('es-AR', { month: 'long' });
+      const mFin = end.toLocaleString('es-AR', { month: 'long' });
       const rangoTexto = (current.getMonth() === end.getMonth()) 
-        ? `${current.getDate()}-${end.getDate()} DE ${mesIni.toUpperCase()}`
-        : `${current.getDate()} DE ${mesIni.toUpperCase()} AL ${end.getDate()} DE ${mesFin.toUpperCase()}`;
+        ? `${current.getDate()}-${end.getDate()} DE ${mIni.toUpperCase()}`
+        : `${current.getDate()} DE ${mIni.toUpperCase()} AL ${end.getDate()} DE ${mFin.toUpperCase()}`;
 
       temp.push({
         id: current.getTime(), dateKey: dKey, rango: rangoTexto,
@@ -152,7 +153,9 @@ const App = () => {
         if (line.toLowerCase().includes("canción") && idx > 0 && sectionState === "START") weekReading = lines[idx-1];
         const canMatch = line.match(/\bCanci[óo]n\s+(\d+)\b/i);
         if (canMatch) songs.push(canMatch[1]);
-        if (line.match(/^\d\./)) {
+        
+        // CORRECCIÓN: Capturar números de múltiples dígitos (10, 11, etc.)
+        if (line.match(/^\d+\./)) {
             if (currentItem) { currentItem.section = sectionState; currentItems.push(currentItem); }
             currentItem = { t: line, d: "", section: sectionState };
         } else if (currentItem) { currentItem.d += line + " "; }
@@ -164,37 +167,33 @@ const App = () => {
     n[sIdx].meta.vida = currentItems.filter(i => i.section === "V");
     n[sIdx].meta.lect = weekReading.toUpperCase() || "LECTURA SEMANAL";
     n[sIdx].meta.can1 = songs[0] || "0"; n[sIdx].meta.can2 = songs[1] || "0"; n[sIdx].meta.can3 = songs[2] || "0";
-    setSemanas(n);
-    setDoc(doc(db, "programas", `${anio}-${mes + 1}`), { semanas: n });
+    setSemanas(n); pushUpdate(n);
+  };
+
+  const pushUpdate = async (newData) => {
+    await setDoc(doc(db, "programas", `${anio}-${mes + 1}`), { semanas: newData });
   };
 
   const updateAsig = (sIdx, field, val) => {
     if (role === 'member') return;
-    const n = [...semanas]; n[sIdx].asig[field] = val; setSemanas(n);
-    setDoc(doc(db, "programas", `${anio}-${mes + 1}`), { semanas: n });
+    const n = [...semanas]; n[sIdx].asig[field] = val; setSemanas(n); pushUpdate(n);
   };
 
   const updateMetaItem = (sIdx, section, itemIdx, field, val) => {
-    const n = [...semanas];
-    n[sIdx].meta[section][itemIdx][field] = val;
-    setSemanas(n);
-    setDoc(doc(db, "programas", `${anio}-${mes + 1}`), { semanas: n });
+    if (role !== 'admin') return;
+    const n = [...semanas]; n[sIdx].meta[section][itemIdx][field] = val; setSemanas(n); pushUpdate(n);
   };
 
   const deleteMetaItem = (sIdx, section, itemIdx) => {
     if (!window.confirm("¿Eliminar este tema?")) return;
-    const n = [...semanas];
-    n[sIdx].meta[section].splice(itemIdx, 1);
-    setSemanas(n);
-    setDoc(doc(db, "programas", `${anio}-${mes + 1}`), { semanas: n });
+    const n = [...semanas]; n[sIdx].meta[section].splice(itemIdx, 1); setSemanas(n); pushUpdate(n);
   };
 
   const addMetaItem = (sIdx, section) => {
     const n = [...semanas];
     if (!n[sIdx].meta[section]) n[sIdx].meta[section] = [];
     n[sIdx].meta[section].push({ t: "Nuevo Tema", d: "Descripción..." });
-    setSemanas(n);
-    setDoc(doc(db, "programas", `${anio}-${mes + 1}`), { semanas: n });
+    setSemanas(n); pushUpdate(n);
   };
 
   const moveItem = (sIdx, from, to, itemIdx) => {
@@ -203,22 +202,20 @@ const App = () => {
     n[sIdx].meta[from].splice(itemIdx, 1);
     if (!n[sIdx].meta[to]) n[sIdx].meta[to] = [];
     n[sIdx].meta[to].push(item);
-    setSemanas(n);
-    setDoc(doc(db, "programas", `${anio}-${mes + 1}`), { semanas: n });
+    setSemanas(n); pushUpdate(n);
   };
 
   const clearWeek = (sIdx) => {
-    if(!window.confirm("¿Borrar todo el contenido de la semana?")) return;
+    if(!window.confirm("¿Borrar todo el contenido?")) return;
     const n = [...semanas];
     n[sIdx].meta = { lect: "LECTURA SEMANAL", can1: "0", can2: "0", can3: "0", tesoros: [], maestros: [], vida: [], atT: "Título Atalaya..." };
     n[sIdx].asig = {};
-    setSemanas(n);
-    setDoc(doc(db, "programas", `${anio}-${mes + 1}`), { semanas: n });
+    setSemanas(n); pushUpdate(n);
   };
 
   const printWeek = (s) => {
     const el = document.getElementById(`week-${s.id}`);
-    html2canvas(el, { scale: 2, useCORS: true }).then(canvas => {
+    html2canvas(el, { scale: 2, useCORS: true, logging: false }).then(canvas => {
       const pdf = new jsPDF('p', 'mm', 'a4');
       pdf.addImage(canvas.toDataURL('image/png'), 'PNG', 5, 5, 200, 0);
       pdf.save(`Reunion (${s.rango.toLowerCase()}).pdf`);
@@ -235,12 +232,12 @@ const App = () => {
   if (loading) return <div className="h-screen flex items-center justify-center bg-slate-900 text-blue-400 font-black animate-pulse">REUNIONES GP...</div>;
 
   if (!user) return (
-    <div className="min-h-screen bg-slate-900 flex items-center justify-center p-6">
-      <form onSubmit={handleLogin} className="bg-white p-12 rounded-[3rem] shadow-2xl w-full max-w-md space-y-6 border-t-[12px] border-blue-600 text-center">
+    <div className="min-h-screen bg-slate-900 flex items-center justify-center p-6 text-center leading-none italic font-sans">
+      <form onSubmit={handleLogin} className="bg-white p-12 rounded-[3rem] shadow-2xl w-full max-w-md space-y-6 border-t-[12px] border-blue-600">
         <h2 className="text-4xl font-black text-slate-800 uppercase tracking-tighter">Reuniones GP</h2>
-        <input type="email" placeholder="Email" className="w-full p-4 bg-slate-50 border rounded-2xl outline-none font-bold shadow-inner" onChange={e => setLoginMail(e.target.value)} />
-        <input type="password" placeholder="Clave" className="w-full p-4 bg-slate-50 border rounded-2xl outline-none font-bold shadow-inner" onChange={e => setLoginPass(e.target.value)} />
-        <button type="submit" className="w-full bg-blue-600 text-white py-4 rounded-2xl font-black uppercase tracking-widest shadow-lg">Entrar</button>
+        <input type="email" placeholder="Email" className="w-full p-4 bg-slate-50 border rounded-2xl outline-none font-bold" onChange={e => setLoginMail(e.target.value)} />
+        <input type="password" placeholder="Clave" className="w-full p-4 bg-slate-50 border rounded-2xl outline-none font-bold" onChange={e => setLoginPass(e.target.value)} />
+        <button type="submit" className="w-full bg-blue-600 text-white py-4 rounded-2xl font-black uppercase">Entrar</button>
       </form>
     </div>
   );
@@ -252,8 +249,8 @@ const App = () => {
                 @page { size: A4; margin: 0; }
                 body { background: white; }
                 .print-hidden { display: none !important; }
-                .tooltip { display: none !important; visibility: hidden !important; }
-                .page-break { page-break-before: always; height: 296mm; padding: 10mm 15mm !important; margin: 0 !important; border: none !important; box-shadow: none !important; }
+                .tooltip { display: none !important; }
+                .page-break { page-break-before: always; height: 296mm; padding: 6mm 10mm !important; margin: 0 !important; border: none !important; box-shadow: none !important; }
                 .page-break:first-of-type { page-break-before: avoid; }
             }
             .tooltip { visibility: hidden; opacity: 0; transition: 0.1s; position: absolute; z-index: 50; }
@@ -278,46 +275,42 @@ const App = () => {
             <button onClick={() => setShowMeta(!showMeta)} className={`px-5 py-2 rounded-full font-black text-[10px] uppercase border shadow-md transition-all ${showMeta ? 'bg-yellow-500 text-white' : 'bg-white'}`}>ESTRUCTURA</button>
           )}
           <button onClick={() => window.print()} className="bg-emerald-600 text-white px-6 py-2 rounded-full font-black text-[10px] shadow-lg uppercase">PDF MENSUAL</button>
-          <button onClick={() => { signOut(auth); setUser(null); }} className="bg-slate-100 p-2 rounded-full transition-colors hover:bg-red-500 hover:text-white"><LogOut size={18}/></button>
+          <button onClick={() => { signOut(auth); setUser(null); }} className="bg-slate-100 text-slate-400 p-2 rounded-full hover:bg-red-500 hover:text-white transition-all"><LogOut size={18}/></button>
         </div>
       </div>
 
       <div id="print-area" className="max-w-4xl mx-auto space-y-4">
-        {/* TITULO SOLO PAGINA 1 */}
-        <div className="text-center border-b-4 border-slate-900 pb-2 pt-10 mb-4 px-10 print:block hidden">
+        <div className="text-center border-b-4 border-slate-900 pb-2 pt-6 mb-2 px-10 print:block hidden">
             <h1 className="text-2xl font-black text-slate-900 uppercase">Programa de asignaciones para las Reuniones</h1>
             <p className="text-sm font-bold text-blue-800 uppercase tracking-widest mt-1 italic">Congregación General Pinedo</p>
         </div>
 
         {semanas.map((s, sIdx) => (
-          <div key={s.id} id={`week-${s.id}`} className="bg-white border border-slate-200 page-break rounded-[2.5rem] overflow-hidden mb-10 shadow-sm relative italic">
-            <div className="bg-slate-900 p-3 text-center text-white text-xl font-black tracking-widest uppercase italic flex justify-between px-10 items-center">
+          <div key={s.id} id={`week-${s.id}`} className="bg-white border border-slate-200 page-break rounded-[2.5rem] overflow-hidden mb-8 shadow-sm relative italic">
+            <div className="bg-slate-900 p-3 text-center text-white text-xl font-black tracking-widest uppercase italic flex justify-between px-10 items-center leading-none">
                 <span>{s.rango}</span>
-                <button onClick={() => printWeek(s)} className="print-hidden p-2 bg-white/10 rounded-full hover:bg-white/20 transition-all"><Printer size={16}/></button>
+                <button onClick={() => printWeek(s)} className="print-hidden p-2 bg-white/10 rounded-full hover:bg-white/20 transition-all leading-none"><Printer size={16}/></button>
             </div>
             
             {showMeta && role === 'admin' && (
               <div className="bg-yellow-50 p-6 border-b-4 border-yellow-400 print:hidden flex flex-col gap-3">
-                 <div className="flex justify-between items-center">
-                    <p className="text-[10px] font-black text-yellow-800 uppercase tracking-widest leading-none">Importar texto de JW.ORG:</p>
-                    <button onClick={() => clearWeek(sIdx)} className="text-red-600 flex items-center gap-1 text-[9px] font-black uppercase hover:underline flex items-center gap-1"><RotateCcw size={14}/> Limpiar Semana</button>
-                 </div>
-                 <textarea className="w-full h-16 p-3 rounded-2xl border-2 border-yellow-200 text-[10px] font-mono shadow-inner outline-none bg-white/50 focus:bg-white" 
-                    placeholder="Pega el contenido de la web aquí..." onPaste={(e) => processPastedText(sIdx, e.clipboardData.getData('Text'))}/>
+                 <textarea className="w-full h-16 p-3 rounded-2xl border-2 border-yellow-200 text-[10px] font-mono shadow-inner outline-none bg-white/50 focus:bg-white transition-all shadow-none" 
+                    placeholder="Pega el contenido de JW.org aquí..." onPaste={(e) => processPastedText(sIdx, e.clipboardData.getData('Text'))}/>
+                 <button onClick={() => clearWeek(sIdx)} className="text-red-600 flex items-center gap-1 text-[9px] font-black uppercase hover:underline"><RotateCcw size={14}/> Limpiar Semana</button>
               </div>
             )}
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-10 px-10 pt-4 pb-10 leading-none relative">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-10 px-8 py-6 leading-none relative">
               {/* --- VIDA Y MINISTERIO --- */}
-              <div className="space-y-4">
+              <div className="space-y-4 leading-none">
                 <div className="flex items-center gap-3 border-b-2 border-[#007B5E] pb-1 text-[#007B5E]">
                   <BookOpen size={24} />
                   <h3 className="font-black uppercase text-[11px] italic tracking-tighter leading-none">Vida y Ministerio Cristianos</h3>
                 </div>
 
                 <div className="flex justify-between font-black text-[9px] bg-emerald-50 p-3 border border-emerald-100 rounded-xl leading-none">
-                    <span className="flex items-center gap-1 font-black leading-none"><Music size={12}/> CANCIÓN {s.meta.can1}</span>
-                    <span className="uppercase text-slate-700 font-bold tracking-widest leading-none">{s.meta.lect}</span>
+                    <span>CANCIÓN {s.meta.can1}</span>
+                    <span className="uppercase text-slate-700 tracking-tighter font-bold">{s.meta.lect}</span>
                 </div>
 
                 <div className="space-y-0.5">
@@ -331,7 +324,7 @@ const App = () => {
                     <div key={tIdx} className="relative has-tooltip">
                         <div className="flex justify-between items-center group">
                             {showMeta && role === 'admin' ? (
-                                <input className="w-full text-[11px] font-black border-b bg-transparent" value={t.t} onChange={(e) => updateMetaItem(sIdx, 'tesoros', tIdx, 't', e.target.value)} />
+                                <input className="w-full text-[11px] font-black border-b bg-transparent outline-none uppercase" value={t.t} onChange={(e) => updateMetaItem(sIdx, 'tesoros', tIdx, 't', e.target.value)} />
                             ) : <p className="text-[11px] font-black text-emerald-950 border-b pb-0.5 uppercase cursor-help leading-tight">{t.t}</p>}
                             {showMeta && role === 'admin' && (
                                 <div className="flex gap-1 print:hidden">
@@ -347,13 +340,13 @@ const App = () => {
                 </div>
 
                 <SectionHeader title="Seamos Mejores Maestros" color="bg-[#C18B00]" />
-                <div className="space-y-2">
+                <div className="space-y-2 mb-2 leading-none">
                   {s.meta.maestros?.map((m, mIdx) => (
                     <div key={mIdx} className="border-l-2 border-amber-300 pl-3 py-1 bg-amber-50/30 rounded-r-lg mb-1 relative has-tooltip">
                       <div className="flex justify-between items-start">
                         {showMeta && role === 'admin' ? (
-                            <input className="w-full text-[10px] font-black border-b bg-transparent" value={m.t} onChange={(e) => updateMetaItem(sIdx, 'maestros', mIdx, 't', e.target.value)} />
-                        ) : <p className="text-[10px] font-black text-amber-800 uppercase cursor-help leading-tight pr-4">{m.t}</p>}
+                            <input className="w-full text-[10px] font-black border-b bg-transparent outline-none uppercase" value={m.t} onChange={(e) => updateMetaItem(sIdx, 'maestros', mIdx, 't', e.target.value)} />
+                        ) : <p className="text-[10px] font-black text-amber-800 uppercase cursor-help leading-tight pr-4 leading-none">{m.t}</p>}
                         {showMeta && role === 'admin' && (
                             <div className="flex gap-1 print:hidden">
                                 <button onClick={() => moveItem(sIdx, 'maestros', 'tesoros', mIdx)} className="text-emerald-500"><ArrowUpCircle size={14}/></button>
@@ -373,18 +366,18 @@ const App = () => {
                       )}
                     </div>
                   ))}
-                  {showMeta && role === 'admin' && <button onClick={() => addMetaItem(sIdx, 'maestros')} className="text-[9px] font-black text-amber-600 flex items-center gap-1 mt-2 uppercase"><PlusCircle size={14}/> Añadir Maestro</button>}
+                  {showMeta && role === 'admin' && <button onClick={() => addMetaItem(sIdx, 'maestros')} className="text-[9px] font-black text-amber-600 flex items-center gap-1 mt-1 uppercase"><PlusCircle size={14}/> Añadir Maestro</button>}
                 </div>
 
                 <SectionHeader title="Nuestra Vida Cristiana" color="bg-[#8A1A11]" />
                 <div className="space-y-4">
-                    <div className="font-black text-[9px] flex items-center gap-2 leading-none"><Music size={12} className="text-red-600"/> CANCIÓN {s.meta.can2}</div>
+                    <div className="font-black text-[9px] flex items-center gap-2"><Music size={12} className="text-red-600"/> CANCIÓN {s.meta.can2}</div>
                     {s.meta.vida?.map((v, vIdx) => (
                        <div key={vIdx} className="relative has-tooltip">
-                          <div className="flex justify-between items-start">
+                          <div className="flex justify-between items-start leading-none">
                             {showMeta && role === 'admin' ? (
-                                <input className="w-full text-[10px] font-black border-b bg-transparent" value={v.t} onChange={(e) => updateMetaItem(sIdx, 'vida', vIdx, 't', e.target.value)} />
-                            ) : <p className="text-[10px] font-black text-red-950 uppercase border-b pb-0.5 cursor-help leading-tight">{v.t}</p>}
+                                <input className="w-full text-[10px] font-black border-b bg-transparent outline-none uppercase" value={v.t} onChange={(e) => updateMetaItem(sIdx, 'vida', vIdx, 't', e.target.value)} />
+                            ) : <p className="text-[10px] font-black text-red-950 uppercase border-b pb-0.5 cursor-help leading-tight leading-none">{v.t}</p>}
                             {showMeta && role === 'admin' && (
                                 <div className="flex gap-1 print:hidden">
                                     <button onClick={() => moveItem(sIdx, 'vida', 'maestros', vIdx)} className="text-amber-500"><ArrowUpCircle size={14}/></button>
@@ -403,33 +396,33 @@ const App = () => {
                           )}
                        </div>
                     ))}
-                    {showMeta && role === 'admin' && <button onClick={() => addMetaItem(sIdx, 'vida')} className="text-[9px] font-black text-red-600 flex items-center gap-1 mt-1 uppercase"><PlusCircle size={14}/> Añadir Parte Local</button>}
-                    <div className="pt-2 border-t text-[9px] font-black flex justify-between uppercase leading-none italic shadow-none">
+                    {showMeta && role === 'admin' && <button onClick={() => addMetaItem(sIdx, 'vida')} className="text-[9px] font-black text-red-600 flex items-center gap-1 mt-0.5 uppercase"><PlusCircle size={14}/> Añadir Parte Local</button>}
+                    <div className="pt-1 border-t text-[9px] font-black flex justify-between uppercase leading-none italic shadow-none">
                         <span>CANCIÓN {s.meta.can3} Y ORACIÓN</span>
-                        <SelectRow label="Oración Final" val={s.asig.orFi} options={getFiltered("ora")} edit={editMode} onSelect={v => updateAsig(sIdx, 'orFi', v)} />
+                        <SelectRow label="O. Final" val={s.asig.orFi} options={getFiltered("ora")} edit={editMode} onSelect={v => updateAsig(sIdx, 'orFi', v)} />
                     </div>
                 </div>
               </div>
 
               {/* --- FIN DE SEMANA --- */}
-              <div className="space-y-6 flex flex-col h-full italic leading-none">
-                <div className="flex items-center gap-3 border-b-2 border-blue-800 pb-1 text-blue-800"><Users size={24}/><h3 className="font-black uppercase text-xs italic tracking-tighter leading-none tracking-widest leading-none">Reunión de Fin de Semana</h3></div>
+              <div className="space-y-4 flex flex-col h-full italic leading-none">
+                <div className="flex items-center gap-3 border-b-2 border-blue-800 pb-1 text-blue-800 leading-none"><Users size={24}/><h3 className="font-black uppercase text-xs italic tracking-tighter leading-none tracking-widest leading-none">Reunión de Fin de Semana</h3></div>
                 
                 <div className="bg-white p-6 rounded-[2rem] border border-blue-100 shadow-sm mb-4 leading-none">
-                  <SelectRow label="Presidente" val={s.asig.wePresi} options={getFiltered("wePresi")} edit={editMode} onSelect={v => updateAsig(sIdx, 'wePresi', v)} />
+                  <SelectRow label="Presidente" val={s.asig.wePresi} options={MIEMBROS.filter(m => m.r.includes("wePresi"))} edit={editMode} onSelect={v => updateAsig(sIdx, 'wePresi', v)} />
                   <div className="mt-6 pt-6 border-t-2 border-slate-50 text-center space-y-2 leading-none shadow-inner p-2 rounded-xl">
                     <p className="text-[9px] font-black text-blue-600 uppercase tracking-widest leading-none">Discurso Público</p>
                     {editMode ? (
                       <div className="space-y-1">
-                        <input className="w-full text-center border p-1 rounded-lg text-[9px] italic shadow-inner outline-none shadow-none" placeholder="Título Discurso..." value={s.asig.discTit || ""} onChange={e => updateAsig(sIdx, 'discTit', e.target.value)} />
+                        <input className="w-full text-center border p-1 rounded-lg text-[9px] italic outline-none shadow-inner shadow-none" placeholder="Título Discurso..." value={s.asig.discTit || ""} onChange={e => updateAsig(sIdx, 'discTit', e.target.value)} />
                         <input className="w-full text-center border p-1 rounded-lg text-[9px] font-black uppercase shadow-inner outline-none" placeholder="Nombre Discursante..." value={s.asig.discNom || ""} onChange={e => updateAsig(sIdx, 'discNom', e.target.value)} />
                         <input className="w-full text-center border p-1 rounded-lg text-[8px] italic shadow-inner outline-none" placeholder="Congregación..." value={s.asig.weDiscOrig || ""} onChange={e => updateAsig(sIdx, 'weDiscOrig', e.target.value)} />
                       </div>
                     ) : (
-                      <div className="py-1 leading-tight leading-none italic">
-                        <p className="text-base font-serif italic font-black text-slate-800 leading-tight">"{s.asig.discTit || 'TÍTULO PENDIENTE'}"</p>
+                      <div className="py-1 leading-tight italic">
+                        <p className="text-base font-serif italic font-black text-slate-800 leading-none tracking-tight">"{s.asig.discTit || 'TÍTULO PENDIENTE'}"</p>
                         <p className="text-xs font-black uppercase text-blue-900 mt-1 leading-none">{s.asig.discNom || 'NOMBRE'}</p>
-                        <p className="text-[9px] text-slate-500 font-bold italic tracking-tighter leading-none italic tracking-widest uppercase leading-none">({s.asig.weDiscOrig || "General Pinedo"})</p>
+                        <p className="text-[9px] text-slate-500 font-bold italic tracking-tighter leading-none italic leading-none shadow-none tracking-widest uppercase italic leading-none">({s.asig.weDiscOrig || "General Pinedo"})</p>
                       </div>
                     )}
                   </div>
@@ -437,7 +430,7 @@ const App = () => {
 
                 <div className="bg-white p-6 rounded-3xl border border-blue-100 shadow-sm leading-none">
                    <p className="text-[9px] font-black text-blue-800 uppercase mb-4 tracking-widest text-center border-b pb-1 underline italic leading-none shadow-none px-4">Estudio de La Atalaya</p>
-                   <div className="text-center mb-4 leading-none">
+                   <div className="text-center mb-4 leading-none px-4">
                       {s.asig.atImg && <img src={s.asig.atImg} className="h-32 mx-auto rounded-xl mb-3 shadow-md object-cover w-full border-2 border-white shadow-none shadow-md" alt="Atalaya" crossOrigin="anonymous" />}
                       {(role === 'admin' || role === 'editor') && editMode && (
                         <div className="flex flex-col gap-1 print:hidden py-2 bg-slate-50 rounded-lg p-2 mb-2 border border-blue-100 shadow-inner">
@@ -445,42 +438,42 @@ const App = () => {
                           <input className="text-[9px] p-1 border w-full rounded outline-none" placeholder="Título artículo..." value={s.asig.atTitulo || ""} onChange={e => updateAsig(sIdx, 'atTitulo', e.target.value)} />
                         </div>
                       )}
-                      <p className="text-[10px] font-black text-blue-900 italic leading-snug px-4 uppercase tracking-tighter leading-none shadow-none px-4 leading-none tracking-tighter leading-tight italic leading-none shadow-none">"{s.asig.atTitulo || "Artículo de Estudio"}"</p>
+                      <p className="text-[10px] font-black text-blue-900 italic leading-snug px-4 uppercase tracking-tighter leading-none shadow-none px-4 leading-none tracking-tighter leading-tight italic leading-none leading-none shadow-none">"{s.asig.atTitulo || "Artículo de Estudio"}"</p>
                    </div>
                    <div className="space-y-0.5">
-                    <SelectRow label="Conductor" val={s.asig.atCond} options={getFiltered("atCond")} edit={editMode} onSelect={v => updateAsig(sIdx, 'atCond', v)} />
+                    <SelectRow label="Conductor" val={s.asig.atCond} options={MIEMBROS.filter(m => m.r.includes("atCond"))} edit={editMode} onSelect={v => updateAsig(sIdx, 'atCond', v)} />
                     <SelectRow label="Lector" val={s.asig.atLect} options={MIEMBROS.filter(m => m.r.includes("atLect") || m.n.includes("Cristian"))} edit={editMode} onSelect={v => updateAsig(sIdx, 'atLect', v)} />
                    </div>
                 </div>
 
-                {/* OPCIÓN DE SEGUNDO DISCURSO (SOLO ADMIN) */}
-                {(role === 'admin' && editMode) || s.asig.discTit2 ? (
-                    <div className="bg-white p-6 rounded-3xl border-2 border-dashed border-blue-200 shadow-sm leading-none mt-2 shadow-md">
-                        <p className="text-[9px] font-black text-blue-600 uppercase tracking-widest text-center mb-3 leading-none">Discurso Adicional / Especial</p>
-                        {editMode ? (
-                            <div className="space-y-1">
-                                <input className="w-full text-center border p-1 rounded-lg text-[9px] italic" placeholder="Título 2do Discurso" value={s.asig.discTit2 || ""} onChange={e => updateAsig(sIdx, 'discTit2', e.target.value)} />
-                                <input className="w-full text-center border p-1 rounded-lg text-[9px] font-black" placeholder="Nombre Discursante" value={s.asig.discNom2 || ""} onChange={e => updateAsig(sIdx, 'discNom2', e.target.value)} />
-                                <div className="flex gap-1">
-                                    <input className="w-1/2 text-center border p-1 rounded-lg text-[9px]" placeholder="Canción" value={s.asig.discCan2 || ""} onChange={e => updateAsig(sIdx, 'discCan2', e.target.value)} />
-                                    <input className="w-1/2 text-center border p-1 rounded-lg text-[9px]" placeholder="Oración" value={s.asig.discOra2 || ""} onChange={e => updateAsig(sIdx, 'discOra2', e.target.value)} />
+                <div className="bg-white p-6 rounded-3xl border-2 border-dashed border-blue-100 shadow-sm leading-none mt-2 shadow-none">
+                    {(role === 'admin' && editMode) || s.asig.discTit2 ? (
+                        <>
+                            <p className="text-[9px] font-black text-blue-600 uppercase tracking-widest text-center mb-3">Discurso Adicional / Especial</p>
+                            {editMode ? (
+                                <div className="space-y-1">
+                                    <input className="w-full text-center border p-1 rounded-lg text-[9px] italic" placeholder="Título 2do Discurso" value={s.asig.discTit2 || ""} onChange={e => updateAsig(sIdx, 'discTit2', e.target.value)} />
+                                    <input className="w-full text-center border p-1 rounded-lg text-[9px] font-black" placeholder="Nombre Discursante" value={s.asig.discNom2 || ""} onChange={e => updateAsig(sIdx, 'discNom2', e.target.value)} />
+                                    <div className="flex gap-1">
+                                        <input className="w-1/2 text-center border p-1 rounded-lg text-[9px]" placeholder="Canción" value={s.asig.discCan2 || ""} onChange={e => updateAsig(sIdx, 'discCan2', e.target.value)} />
+                                        <input className="w-1/2 text-center border p-1 rounded-lg text-[9px]" placeholder="Oración" value={s.asig.discOra2 || ""} onChange={e => updateAsig(sIdx, 'discOra2', e.target.value)} />
+                                    </div>
                                 </div>
-                            </div>
-                        ) : (
-                            <div className="text-center space-y-2 leading-none">
-                                <p className="text-sm font-serif italic font-black text-slate-800 leading-tight">"{s.asig.discTit2}"</p>
-                                <p className="text-xs font-black uppercase text-blue-900">{s.asig.discNom2}</p>
-                                <div className="flex justify-around pt-2 border-t text-[10px] font-black uppercase text-slate-500">
-                                    <span>Canción {s.asig.discCan2}</span>
-                                    <span>Oración: {s.asig.discOra2}</span>
+                            ) : (
+                                <div className="text-center space-y-2 leading-none italic">
+                                    <p className="text-sm font-serif italic font-black text-slate-800 leading-tight leading-none tracking-tight">"{s.asig.discTit2}"</p>
+                                    <p className="text-xs font-black uppercase text-blue-900 leading-none">{s.asig.discNom2}</p>
+                                    <div className="flex justify-around pt-2 border-t text-[10px] font-black uppercase text-slate-500 leading-none">
+                                        <span>Canción {s.asig.discCan2}</span>
+                                        <span>Oración: {s.asig.discOra2}</span>
+                                    </div>
                                 </div>
-                            </div>
-                        )}
-                    </div>
-                ) : null}
+                            )}
+                        </>
+                    ) : null}
+                </div>
 
-                {/* MECÁNICAS */}
-                <div className="pt-6 border-t-2 border-double border-slate-200 mt-auto leading-none italic font-bold">
+                <div className="pt-4 border-t-2 border-double border-slate-200 mt-auto leading-none">
                   <div className="flex items-center gap-2 mb-2 text-slate-400 font-black leading-none italic font-bold tracking-widest uppercase leading-none shadow-none"><Settings size={18}/><h3 className="uppercase text-[9px] tracking-widest leading-none font-bold">Asignaciones Mecánicas</h3></div>
                   <div className="space-y-0.5 bg-slate-50 p-6 rounded-[2rem] border shadow-inner leading-none leading-none leading-none shadow-none">
                     <SelectRow label="Limpieza" val={s.asig.limp} options={OP_LIMPIEZA} edit={editMode} onSelect={v => updateAsig(sIdx, 'limp', v)} />
@@ -501,17 +494,17 @@ const App = () => {
 };
 
 const SelectRow = ({ label, val, options, edit, onSelect }) => (
-  <div className="flex justify-between items-center py-1 border-b border-slate-50 last:border-0 min-h-[35px] leading-none">
-    <span className="text-[9px] font-black text-slate-300 uppercase pr-4 leading-none tracking-tighter leading-none tracking-tighter leading-none tracking-tighter leading-none tracking-tighter leading-none tracking-tighter leading-none tracking-tighter leading-none tracking-tighter leading-none tracking-tighter leading-none tracking-tighter leading-none tracking-tighter">{label}</span>
+  <div className="flex justify-between items-center py-1 border-b border-slate-50 last:border-0 min-h-[32px] leading-none">
+    <span className="text-[9px] font-black text-slate-300 uppercase pr-4 leading-none tracking-tighter">{label}</span>
     {edit ? (
       <select className="text-[11px] border border-slate-100 rounded-lg bg-white w-44 p-0.5 font-bold outline-none shadow-none leading-none shadow-none shadow-none" value={val || ""} onChange={e => onSelect(e.target.value)}>
         <option value="">-- SELEC. --</option>
         {options?.map(o => <option key={o.n} value={o.n}>{o.n}</option>)}
       </select>
-    ) : <span className="text-[12px] font-black text-slate-900 tracking-tighter leading-none italic italic tracking-tighter leading-none italic shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none">{val || "---"}</span>}
+    ) : <span className="text-[12px] font-black text-slate-900 tracking-tighter leading-none italic italic tracking-tighter leading-none italic shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none">{val || "---"}</span>}
   </div>
 );
 
-const SectionHeader = ({ title, color }) => <div className={`${color} text-white text-[9px] font-black px-4 py-1 rounded-lg uppercase mb-2 shadow-none leading-none tracking-widest leading-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none`}>{title}</div>;
+const SectionHeader = ({ title, color }) => <div className={`${color} text-white text-[9px] font-black px-4 py-1 rounded-lg uppercase mb-2 shadow-none leading-none tracking-widest leading-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none`}>{title}</div>;
 
 export default App;
