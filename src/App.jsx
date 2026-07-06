@@ -30,6 +30,8 @@ const MIEMBROS = [
   { n: "Ascanio Viviana", s: "F", r: [] },
   { n: "Baragaño Moira", s: "F", r: [] },
   { n: "Díaz Dante", s: "M", r: ["t3"] },
+  { n: "Dominguez Atilio", s: "M", r: ["t3"] },
+  { n: "Dominguez Norma", s: "F", r: [] },
   { n: "Gualtieri Abel", s: "M", r: ["presi", "ora", "t12", "t3", "vida", "atCond", "wePresi"] },
   { n: "Gualtieri Mariel", s: "F", r: [] },
   { n: "Gonzalez Maria", s: "F", r: [] },
