@@ -26,9 +26,10 @@ const db = getFirestore(app);
 const auth = getAuth(app);
 
 const MIEMBROS = [
-  { n: "Ascanio Nelson", s: "M", r: ["t3"] },
   { n: "Ascanio Viviana", s: "F", r: [] },
   { n: "Baragaño Moira", s: "F", r: [] },
+  { n: "Cáceres Felix", s: "M", r: ["presi", "ora", "t12", "t3", "vida", "atCond", "wePresi"] },
+  { n: "Cáceres Angela", s: "F", r: [] },
   { n: "Díaz Dante", s: "M", r: ["t3"] },
   { n: "Dominguez Atilio", s: "M", r: ["t3"] },
   { n: "Dominguez Norma", s: "F", r: [] },
@@ -53,6 +54,7 @@ const MIEMBROS = [
   { n: "Rojas Lisseth", s: "F", r: [] },
   { n: "Rojas Iara", s: "F", r: [] },
   { n: "Romero Jose", s: "M", r: ["ora", "t12", "t3", "vida", "wePresi", "meca"] },
+  { n: "Romero Mateo", s: "M", r: ["ora", "t12", "t3", "vida", "atCond", "atLect", "wePresi", "meca"] },
   { n: "Romero Margarita", s: "F", r: [] },
   { n: "Sardina Clara", s: "F", r: [] },
   { n: "Sardina Jonatan", s: "M", r: ["ora", "t3", "t12", "ebLect", "atLect", "meca", "vida", "wePresi"] },
