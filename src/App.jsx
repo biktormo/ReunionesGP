@@ -26,7 +26,6 @@ const db = getFirestore(app);
 const auth = getAuth(app);
 
 const MIEMBROS = [
-  { n: "Ascanio Viviana", s: "F", r: [] },
   { n: "Baragaño Moira", s: "F", r: [] },
   { n: "Cáceres Felix", s: "M", r: ["presi", "ora", "t12", "t3", "vida", "atCond", "wePresi"] },
   { n: "Cáceres Angela", s: "F", r: [] },
@@ -95,7 +94,7 @@ const App = () => {
       if (u) {
         setUser(u);
         if (u.email === "biktormo@gmail.com") setRole('admin');
-        else if (["abel@pinedo.com", "cristian@pinedo.com"].includes(u.email)) setRole('editor');
+        else if (["abel@pinedo.com", "cristian@pinedo.com", "mateo@pinedo.com"].includes(u.email)) setRole('editor');
         else setRole('member');
       } else { setUser(null); setRole('member'); }
       setLoading(false);
