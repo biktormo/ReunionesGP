@@ -19,12 +19,12 @@ import {
 } from "firebase/auth";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyBtYm5P6hWi4rzE1sGsrjutMK1ukfI0wAg",
-  authDomain: "reuniones-gp.firebaseapp.com",
-  projectId: "reuniones-gp",
-  storageBucket: "reuniones-gp.firebasestorage.app",
-  messagingSenderId: "347619552073",
-  appId: "1:347619552073:web:993fe0b33570076f564898"
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || "reuniones-gp.firebaseapp.com",
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || "reuniones-gp",
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || "reuniones-gp.firebasestorage.app",
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || "347619552073",
+  appId: import.meta.env.VITE_FIREBASE_APP_ID || "1:347619552073:web:993fe0b33570076f564898"
 };
 
 const app = initializeApp(firebaseConfig);
