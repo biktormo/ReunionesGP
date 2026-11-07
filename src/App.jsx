@@ -4,7 +4,9 @@ import html2canvas from "html2canvas";
 import { 
   Printer, Music, Mic2, BookOpen, Users, Settings, LogOut, 
   Edit3, Key, Mail, UserCheck, ClipboardPaste, Info, Save, 
-  Trash2, RotateCcw, ArrowUpCircle, ArrowDownCircle, PlusCircle
+  Trash2, RotateCcw, ArrowUpCircle, ArrowDownCircle, PlusCircle,
+  UserPlus, X, Check, Search, Filter, ShieldCheck, CheckSquare,
+  Square, ChevronDown, Sparkles
 } from 'lucide-react';
 
 // --- CONFIGURACIÓN FIREBASE ---
@@ -25,7 +27,21 @@ const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 const auth = getAuth(app);
 
-const MIEMBROS = [
+// Roles y asignaciones configurables
+export const ROLES_CONFIG = [
+  { id: "presi", label: "Presi VMC", desc: "Presidente Vida y Ministerio", color: "bg-emerald-100 text-emerald-800 border-emerald-300" },
+  { id: "ora", label: "Oración", desc: "Oración Inicial / Final", color: "bg-blue-100 text-blue-800 border-blue-300" },
+  { id: "t12", label: "Tesoros (10m/Perlas)", desc: "Tesoros partes 1 y 2", color: "bg-teal-100 text-teal-800 border-teal-300" },
+  { id: "t3", label: "Lectura Bíblica", desc: "Tesoros parte 3 (Lectura)", color: "bg-cyan-100 text-cyan-800 border-cyan-300" },
+  { id: "vida", label: "Vida / Cond. EB", desc: "Vida Cristiana y Conductor EB", color: "bg-rose-100 text-rose-800 border-rose-300" },
+  { id: "ebLect", label: "Lector EB", desc: "Lector Estudio Bíblico de congregación", color: "bg-purple-100 text-purple-800 border-purple-300" },
+  { id: "wePresi", label: "Presi Finde", desc: "Presidente Fin de Semana", color: "bg-indigo-100 text-indigo-800 border-indigo-300" },
+  { id: "atCond", label: "Cond. Atalaya", desc: "Conductor Estudio de La Atalaya", color: "bg-amber-100 text-amber-800 border-amber-300" },
+  { id: "atLect", label: "Lector Atalaya", desc: "Lector Estudio de La Atalaya", color: "bg-orange-100 text-orange-800 border-orange-300" },
+  { id: "meca", label: "Mecánica", desc: "Entrada, Micrófonos, Audio/Video, Plataforma", color: "bg-slate-200 text-slate-800 border-slate-400" }
+];
+
+const MIEMBROS_DEFAULT = [
   { n: "Baragaño Moira", s: "F", r: [] },
   { n: "Cáceres Felix", s: "M", r: ["presi", "ora", "t12", "t3", "vida", "atCond", "wePresi"] },
   { n: "Cáceres Angela", s: "F", r: [] },
@@ -33,7 +49,7 @@ const MIEMBROS = [
   { n: "Díaz Dante", s: "M", r: ["t3"] },
   { n: "Dominguez Atilio", s: "M", r: ["t3"] },
   { n: "Dominguez Norma", s: "F", r: [] },
-  { n: "Gualtieri Abel", s: "M", r: ["presi", "ora", "t12", "t3", "vida", "atCond", "wePresi","atLect","meca" ] },
+  { n: "Gualtieri Abel", s: "M", r: ["presi", "ora", "t12", "t3", "vida", "atCond", "wePresi", "atLect", "meca"] },
   { n: "Gualtieri Mariel", s: "F", r: [] },
   { n: "Gonzalez Maria", s: "F", r: [] },
   { n: "Guzmán Angélica", s: "F", r: [] },
@@ -69,7 +85,7 @@ const MIEMBROS = [
   { n: "Torres Noelia", s: "F", r: [] }
 ].sort((a, b) => a.n.localeCompare(b.n));
 
-const OP_LIMPIEZA = [{n: "Grupo 1"}, {n: "Grupo 2"}, {n: "Limpieza Profunda"}];
+const OP_LIMPIEZA = [{ n: "Grupo 1" }, { n: "Grupo 2" }, { n: "Limpieza Profunda" }];
 
 const App = () => {
   const [user, setUser] = useState(null);
@@ -83,24 +99,44 @@ const App = () => {
   const [editMode, setEditMode] = useState(false);
   const [showMeta, setShowMeta] = useState(false);
 
+  // Lista dinámica de hermanos sincronizada con Firestore
+  const [miembros, setMiembros] = useState(MIEMBROS_DEFAULT);
+  const [showMembersModal, setShowMembersModal] = useState(false);
+  const [showAllInSelect, setShowAllInSelect] = useState(false);
+
+  // Estado del buscador y filtro del modal de hermanos
+  const [memberSearch, setMemberSearch] = useState('');
+  const [memberFilterRole, setMemberFilterRole] = useState('ALL');
+  const [newMemberName, setNewMemberName] = useState('');
+  const [newMemberGender, setNewMemberGender] = useState('M');
+  const [newMemberRoles, setNewMemberRoles] = useState([]);
+  const [savingMembers, setSavingMembers] = useState(false);
+
+  // Filtrado de miembros para selects
   const getFiltered = (rol, type = "normal") => {
-    if (type === "disc") return MIEMBROS.filter(m => m.s === "M");
-    if (rol === "all") return MIEMBROS;
-    return MIEMBROS.filter(m => m.r.includes(rol));
+    if (showAllInSelect) return miembros;
+    if (type === "disc") return miembros.filter(m => m.s === "M");
+    if (!rol || rol === "all") return miembros;
+    return miembros.filter(m => Array.isArray(m.r) && m.r.includes(rol));
   };
 
   useEffect(() => {
-    onAuthStateChanged(auth, (u) => {
+    const unsubAuth = onAuthStateChanged(auth, (u) => {
       if (u) {
         setUser(u);
         if (u.email === "biktormo@gmail.com") setRole('admin');
         else if (["abel@pinedo.com", "cristian@pinedo.com", "mateo@pinedo.com"].includes(u.email)) setRole('editor');
         else setRole('member');
-      } else { setUser(null); setRole('member'); }
+      } else { 
+        setUser(null); 
+        setRole('member'); 
+      }
       setLoading(false);
     });
+    return () => unsubAuth();
   }, []);
 
+  // Sincronizar semanas del mes
   useEffect(() => {
     if (!user) return;
     const docId = `${anio}-${mes + 1}`;
@@ -113,10 +149,29 @@ const App = () => {
           return match ? { ...s, asig: match.asig || {}, meta: match.meta || s.meta } : s;
         });
         setSemanas(fusion);
-      } else { setSemanas(base); }
+      } else { 
+        setSemanas(base); 
+      }
     });
     return () => unsub();
   }, [user, mes, anio]);
+
+  // Sincronizar lista de hermanos desde Firestore
+  useEffect(() => {
+    if (!user) return;
+    const unsubMiembros = onSnapshot(doc(db, "programas", "configuracion_miembros"), (snap) => {
+      if (snap.exists() && Array.isArray(snap.data().lista) && snap.data().lista.length > 0) {
+        const listaOrd = [...snap.data().lista].sort((a, b) => a.n.localeCompare(b.n));
+        setMiembros(listaOrd);
+      } else {
+        setMiembros(MIEMBROS_DEFAULT);
+      }
+    }, (error) => {
+      console.warn("Usando lista local de miembros (sin conexión o primera vez):", error);
+      setMiembros(MIEMBROS_DEFAULT);
+    });
+    return () => unsubMiembros();
+  }, [user]);
 
   const generarSemanasBase = (m, a) => {
     let firstDay = new Date(a, m, 1);
@@ -158,7 +213,6 @@ const App = () => {
         const canMatch = line.match(/\bCanci[óo]n\s+(\d+)\b/i);
         if (canMatch) songs.push(canMatch[1]);
         
-        // CORRECCIÓN: Capturar números de múltiples dígitos (10, 11, etc.)
         if (line.match(/^\d+\./)) {
             if (currentItem) { currentItem.section = sectionState; currentItems.push(currentItem); }
             currentItem = { t: line, d: "", section: sectionState };
@@ -176,6 +230,71 @@ const App = () => {
 
   const pushUpdate = async (newData) => {
     await setDoc(doc(db, "programas", `${anio}-${mes + 1}`), { semanas: newData });
+  };
+
+  // Guardar lista de miembros en Firestore
+  const pushMiembrosCloud = async (nuevaLista) => {
+    setSavingMembers(true);
+    const ordenada = [...nuevaLista].sort((a, b) => a.n.localeCompare(b.n));
+    setMiembros(ordenada);
+    try {
+      await setDoc(doc(db, "programas", "configuracion_miembros"), { lista: ordenada });
+    } catch (err) {
+      console.error("Error al guardar miembros:", err);
+      alert("Error al guardar en Firebase: " + err.message);
+    } finally {
+      setSavingMembers(false);
+    }
+  };
+
+  // Agregar nuevo hermano/a
+  const handleAddMember = (e) => {
+    e.preventDefault();
+    const nombre = newMemberName.trim();
+    if (!nombre) {
+      alert("Ingresa el nombre del hermano o hermana");
+      return;
+    }
+    if (miembros.some(m => m.n.toLowerCase() === nombre.toLowerCase())) {
+      alert("Ya existe un miembro con ese nombre");
+      return;
+    }
+    const nuevo = {
+      n: nombre,
+      s: newMemberGender,
+      r: newMemberGender === 'F' ? [] : newMemberRoles
+    };
+    const actualizada = [...miembros, nuevo];
+    pushMiembrosCloud(actualizada);
+    setNewMemberName('');
+    setNewMemberRoles([]);
+  };
+
+  // Eliminar hermano/a de la congregación
+  const handleDeleteMember = (nombre) => {
+    if (!window.confirm(`¿Seguro que deseas eliminar a "${nombre}" de la lista general y de todas las asignaciones?`)) return;
+    const actualizada = miembros.filter(m => m.n !== nombre);
+    pushMiembrosCloud(actualizada);
+  };
+
+  // Alternar rol/asignación de un hermano
+  const handleToggleMemberRole = (nombre, roleId) => {
+    const actualizada = miembros.map(m => {
+      if (m.n !== nombre) return m;
+      const tieneRol = Array.isArray(m.r) && m.r.includes(roleId);
+      const rolesActuales = Array.isArray(m.r) ? m.r : [];
+      const nuevosRoles = tieneRol 
+        ? rolesActuales.filter(r => r !== roleId)
+        : [...rolesActuales, roleId];
+      return { ...m, r: nuevosRoles };
+    });
+    pushMiembrosCloud(actualizada);
+  };
+
+  // Restablecer miembros a valores por defecto
+  const handleResetMiembros = () => {
+    if (!window.confirm("¿Restablecer la lista completa de hermanos a los valores iniciales predeterminados?")) return;
+    pushMiembrosCloud(MIEMBROS_DEFAULT);
   };
 
   const updateAsig = (sIdx, field, val) => {
@@ -246,6 +365,16 @@ const App = () => {
     </div>
   );
 
+  // Filtrado de miembros en el modal de gestión
+  const filteredModalMembers = miembros.filter(m => {
+    const matchesSearch = m.n.toLowerCase().includes(memberSearch.toLowerCase());
+    if (!matchesSearch) return false;
+    if (memberFilterRole === 'ALL') return true;
+    if (memberFilterRole === 'M') return m.s === 'M';
+    if (memberFilterRole === 'F') return m.s === 'F';
+    return Array.isArray(m.r) && m.r.includes(memberFilterRole);
+  });
+
   return (
     <div className="bg-slate-200 min-h-screen font-sans antialiased pb-20 leading-none">
         <style>{`
@@ -262,28 +391,253 @@ const App = () => {
         `}</style>
 
       {/* NAVBAR */}
-      <div className="bg-white border-b sticky top-0 z-50 p-4 shadow-sm flex justify-between items-center print-hidden">
-        <div className="flex gap-4">
-          <div className="px-4 py-1.5 bg-blue-600 text-white rounded-full font-black text-[10px] uppercase shadow-sm flex items-center gap-2"><UserCheck size={14}/> {role}</div>
+      <div className="bg-white border-b sticky top-0 z-50 p-4 shadow-sm flex flex-wrap justify-between items-center gap-3 print-hidden">
+        <div className="flex items-center gap-3 flex-wrap">
+          <div className="px-4 py-1.5 bg-blue-600 text-white rounded-full font-black text-[10px] uppercase shadow-sm flex items-center gap-2">
+            <UserCheck size={14}/> {role}
+          </div>
           <select className="border-2 border-slate-100 p-1.5 rounded-xl font-black bg-slate-50 text-xs shadow-sm outline-none" value={mes} onChange={e => setMes(Number(e.target.value))}>
             {["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"].map((m,i)=><option key={i} value={i}>{m}</option>)}
           </select>
+          {editMode && (
+            <button 
+              onClick={() => setShowAllInSelect(!showAllInSelect)} 
+              title="Permite seleccionar cualquier hermano en todas las asignaciones o usar el filtro oficial"
+              className={`px-3 py-1 rounded-full text-[9px] font-black uppercase transition-all border ${showAllInSelect ? 'bg-indigo-600 text-white border-indigo-700' : 'bg-slate-100 text-slate-600 border-slate-200'}`}
+            >
+              {showAllInSelect ? "Filtro: Todos" : "Filtro: Por Roles"}
+            </button>
+          )}
         </div>
-        <div className="flex gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           {role !== 'member' && (
             <button onClick={() => setEditMode(!editMode)} className={`px-5 py-2 rounded-full font-black text-[10px] uppercase shadow-md transition-all ${editMode ? 'bg-orange-500 text-white' : 'bg-white text-slate-600 border'}`}>
               {editMode ? "💾 FINALIZAR" : "✏️ ASIGNAR"}
             </button>
           )}
           {role === 'admin' && (
-            <button onClick={() => setShowMeta(!showMeta)} className={`px-5 py-2 rounded-full font-black text-[10px] uppercase border shadow-md transition-all ${showMeta ? 'bg-yellow-500 text-white' : 'bg-white'}`}>ESTRUCTURA</button>
+            <>
+              <button 
+                onClick={() => setShowMembersModal(true)} 
+                className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-full font-black text-[10px] uppercase shadow-md flex items-center gap-1.5 transition-all"
+                title="Gestionar hermanos y listas de asignaciones"
+              >
+                <Users size={14} /> HERMANOS ({miembros.length})
+              </button>
+              <button onClick={() => setShowMeta(!showMeta)} className={`px-5 py-2 rounded-full font-black text-[10px] uppercase border shadow-md transition-all ${showMeta ? 'bg-yellow-500 text-white' : 'bg-white'}`}>
+                ESTRUCTURA
+              </button>
+            </>
           )}
-          <button onClick={() => window.print()} className="bg-emerald-600 text-white px-6 py-2 rounded-full font-black text-[10px] shadow-lg uppercase">PDF MENSUAL</button>
-          <button onClick={() => { signOut(auth); setUser(null); }} className="bg-slate-100 text-slate-400 p-2 rounded-full hover:bg-red-500 hover:text-white transition-all"><LogOut size={18}/></button>
+          <button onClick={() => window.print()} className="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-2 rounded-full font-black text-[10px] shadow-lg uppercase transition-all">
+            PDF MENSUAL
+          </button>
+          <button onClick={() => { signOut(auth); setUser(null); }} className="bg-slate-100 text-slate-400 p-2 rounded-full hover:bg-red-500 hover:text-white transition-all">
+            <LogOut size={18}/>
+          </button>
         </div>
       </div>
 
-      <div id="print-area" className="max-w-4xl mx-auto space-y-4">
+      {/* --- MODAL DE ADMINISTRACIÓN DE HERMANOS Y ASIGNACIONES --- */}
+      {showMembersModal && role === 'admin' && (
+        <div className="fixed inset-0 z-[100] bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-3 sm:p-6 overflow-y-auto">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-4xl max-h-[92vh] flex flex-col overflow-hidden border border-slate-100 animate-in fade-in duration-200">
+            {/* Cabecera del Modal */}
+            <div className="bg-gradient-to-r from-purple-700 via-indigo-700 to-blue-700 p-5 text-white flex justify-between items-center">
+              <div>
+                <div className="flex items-center gap-2">
+                  <ShieldCheck size={22} className="text-yellow-300" />
+                  <h2 className="text-lg font-black uppercase tracking-tight">Gestión de Hermanos y Asignaciones</h2>
+                </div>
+                <p className="text-xs text-purple-100 mt-0.5">Agrega, quita hermanos o asígnalos a los distintos listados para que los editores puedan filtrar.</p>
+              </div>
+              <button 
+                onClick={() => setShowMembersModal(false)}
+                className="p-2 hover:bg-white/20 rounded-full text-white transition-all"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Formulario para agregar nuevo hermano */}
+            <div className="bg-slate-50 p-4 border-b border-slate-200">
+              <form onSubmit={handleAddMember} className="space-y-3">
+                <div className="flex items-center gap-2 text-xs font-black text-purple-900 uppercase">
+                  <UserPlus size={15} /> Añadir Nuevo Hermano o Hermana
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-center">
+                  <div className="sm:col-span-6">
+                    <input 
+                      type="text" 
+                      placeholder="Apellido y Nombre (ej: Gómez Juan)" 
+                      value={newMemberName} 
+                      onChange={e => setNewMemberName(e.target.value)}
+                      className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold outline-none focus:ring-2 focus:ring-purple-500" 
+                    />
+                  </div>
+                  <div className="sm:col-span-3">
+                    <select 
+                      value={newMemberGender} 
+                      onChange={e => setNewMemberGender(e.target.value)}
+                      className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold outline-none"
+                    >
+                      <option value="M">Varón (Hermano)</option>
+                      <option value="F">Mujer (Hermana)</option>
+                    </select>
+                  </div>
+                  <div className="sm:col-span-3">
+                    <button 
+                      type="submit" 
+                      disabled={savingMembers}
+                      className="w-full bg-purple-600 hover:bg-purple-700 text-white font-black text-xs uppercase py-2 px-4 rounded-xl shadow-sm transition-all flex items-center justify-center gap-1.5 disabled:opacity-50"
+                    >
+                      <PlusCircle size={14} /> Agregar
+                    </button>
+                  </div>
+                </div>
+
+                {newMemberGender === 'M' && (
+                  <div className="pt-2 border-t border-slate-200">
+                    <p className="text-[10px] font-black text-slate-500 uppercase mb-1.5">Asignaciones iniciales permitidas:</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {ROLES_CONFIG.map(rc => {
+                        const isChecked = newMemberRoles.includes(rc.id);
+                        return (
+                          <button
+                            type="button"
+                            key={rc.id}
+                            onClick={() => {
+                              if (isChecked) setNewMemberRoles(newMemberRoles.filter(r => r !== rc.id));
+                              else setNewMemberRoles([...newMemberRoles, rc.id]);
+                            }}
+                            className={`px-2 py-1 rounded-lg text-[9px] font-black uppercase border transition-all ${isChecked ? 'bg-purple-600 text-white border-purple-700 shadow-sm' : 'bg-white text-slate-600 border-slate-200 hover:border-slate-400'}`}
+                          >
+                            {isChecked ? '✓ ' : '+ '}{rc.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </form>
+            </div>
+
+            {/* Barra de Búsqueda y Filtro de Roles */}
+            <div className="p-4 bg-white border-b border-slate-200 flex flex-wrap gap-3 items-center justify-between">
+              <div className="relative flex-1 min-w-[200px]">
+                <Search size={14} className="absolute left-3 top-2.5 text-slate-400" />
+                <input 
+                  type="text" 
+                  placeholder="Buscar hermano/a por nombre..." 
+                  value={memberSearch}
+                  onChange={e => setMemberSearch(e.target.value)}
+                  className="w-full pl-9 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:bg-white focus:ring-2 focus:ring-purple-400"
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <Filter size={14} className="text-slate-500" />
+                <select 
+                  value={memberFilterRole}
+                  onChange={e => setMemberFilterRole(e.target.value)}
+                  className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold outline-none"
+                >
+                  <option value="ALL">Todos los miembros ({miembros.length})</option>
+                  <option value="M">Solo Varones ({miembros.filter(m => m.s === 'M').length})</option>
+                  <option value="F">Solo Hermanas ({miembros.filter(m => m.s === 'F').length})</option>
+                  <optgroup label="Filtrar por Asignación">
+                    {ROLES_CONFIG.map(rc => (
+                      <option key={rc.id} value={rc.id}>
+                        {rc.label} ({miembros.filter(m => Array.isArray(m.r) && m.r.includes(rc.id)).length})
+                      </option>
+                    ))}
+                  </optgroup>
+                </select>
+              </div>
+            </div>
+
+            {/* Lista de Hermanos y asignaciones interactivas */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-2">
+              <div className="flex justify-between items-center text-[11px] font-black text-slate-400 uppercase pb-1 border-b">
+                <span>Hermano / Asignaciones ({filteredModalMembers.length} encontrados)</span>
+                <span>Acciones</span>
+              </div>
+
+              {filteredModalMembers.length === 0 ? (
+                <div className="text-center py-10 text-slate-400 text-xs font-bold">
+                  No se encontraron miembros con el criterio especificado.
+                </div>
+              ) : (
+                filteredModalMembers.map(m => (
+                  <div key={m.n} className="bg-slate-50 hover:bg-slate-100/80 p-3 rounded-2xl border border-slate-200 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="space-y-1.5 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className={`px-2 py-0.5 rounded-md text-[9px] font-black uppercase ${m.s === 'M' ? 'bg-blue-100 text-blue-700' : 'bg-pink-100 text-pink-700'}`}>
+                          {m.s === 'M' ? 'Hno' : 'Hna'}
+                        </span>
+                        <span className="text-sm font-black text-slate-800 uppercase tracking-tight">{m.n}</span>
+                      </div>
+
+                      {/* Asignaciones del hermano */}
+                      {m.s === 'M' ? (
+                        <div className="flex flex-wrap gap-1 pt-1">
+                          {ROLES_CONFIG.map(rc => {
+                            const tieneRol = Array.isArray(m.r) && m.r.includes(rc.id);
+                            return (
+                              <button
+                                key={rc.id}
+                                onClick={() => handleToggleMemberRole(m.n, rc.id)}
+                                title={`${tieneRol ? 'Quitar de' : 'Agregar a'} ${rc.desc}`}
+                                className={`px-2 py-0.5 rounded-lg text-[9px] font-black uppercase border transition-all ${
+                                  tieneRol 
+                                    ? rc.color + ' shadow-xs font-extrabold hover:opacity-80' 
+                                    : 'bg-white text-slate-300 border-slate-200 hover:border-slate-400 hover:text-slate-600 opacity-60'
+                                }`}
+                              >
+                                {tieneRol ? `✓ ${rc.label}` : `+ ${rc.label}`}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <p className="text-[10px] text-slate-400 italic">Participa en asignaciones de estudiantes (Seamos mejores maestros) y ayudantes.</p>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-2 self-end sm:self-center">
+                      <button 
+                        onClick={() => handleDeleteMember(m.n)}
+                        className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all"
+                        title={`Eliminar a ${m.n}`}
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            {/* Pie del modal */}
+            <div className="bg-slate-100 p-4 border-t border-slate-200 flex flex-wrap justify-between items-center gap-2">
+              <button 
+                onClick={handleResetMiembros}
+                className="text-[10px] font-bold text-red-600 hover:underline uppercase flex items-center gap-1"
+              >
+                <RotateCcw size={12} /> Restaurar lista original predeterminada
+              </button>
+              <button 
+                onClick={() => setShowMembersModal(false)}
+                className="bg-slate-900 hover:bg-black text-white px-6 py-2 rounded-xl text-xs font-black uppercase transition-all"
+              >
+                Listo / Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ÁREA DE CONTENIDO Y REUNIONES */}
+      <div id="print-area" className="max-w-4xl mx-auto space-y-4 px-2 sm:px-0">
         <div className="text-center border-b-4 border-slate-900 pb-2 pt-6 mb-2 px-10 print:block hidden">
             <h1 className="text-2xl font-black text-slate-900 uppercase">Programa de asignaciones para las Reuniones</h1>
             <p className="text-sm font-bold text-blue-800 uppercase tracking-widest mt-1 italic">Congregación General Pinedo</p>
@@ -318,8 +672,8 @@ const App = () => {
                 </div>
 
                 <div className="space-y-0.5">
-                    <SelectRow label="Presidente" val={s.asig.presi} options={MIEMBROS.filter(m => m.r.includes("presi"))} edit={editMode} onSelect={v => updateAsig(sIdx, 'presi', v)} />
-                    <SelectRow label="Oración Inicial" val={s.asig.orIn} options={MIEMBROS.filter(m => m.r.includes("ora"))} edit={editMode} onSelect={v => updateAsig(sIdx, 'orIn', v)} />
+                    <SelectRow label="Presidente" val={s.asig.presi} options={getFiltered("presi")} edit={editMode} onSelect={v => updateAsig(sIdx, 'presi', v)} />
+                    <SelectRow label="Oración Inicial" val={s.asig.orIn} options={getFiltered("ora")} edit={editMode} onSelect={v => updateAsig(sIdx, 'orIn', v)} />
                 </div>
 
                 <SectionHeader title="Tesoros de la Biblia" color="bg-[#007B5E]" />
@@ -338,7 +692,7 @@ const App = () => {
                             )}
                         </div>
                         <div className="tooltip bg-black text-white text-[10px] p-2 rounded-lg w-64 -top-2 left-full ml-2 shadow-xl border leading-snug">{t.d}</div>
-                        <SelectRow label="Asignado" val={s.asig[`t${tIdx}`]} options={MIEMBROS.filter(m => m.r.includes(tIdx === 2 ? "t3" : "t12"))} edit={editMode} onSelect={v => updateAsig(sIdx, `t${tIdx}`, v)} />
+                        <SelectRow label="Asignado" val={s.asig[`t${tIdx}`]} options={getFiltered(tIdx === 2 ? "t3" : "t12")} edit={editMode} onSelect={v => updateAsig(sIdx, `t${tIdx}`, v)} />
                     </div>
                   ))}
                 </div>
@@ -362,8 +716,8 @@ const App = () => {
                       <div className="tooltip bg-amber-900 text-white text-[10px] p-2 rounded-lg w-64 -top-2 left-full ml-2 shadow-xl border leading-snug">{m.d}</div>
                       {!m.t.toLowerCase().includes("discurso") ? (
                         <>
-                          <SelectRow label="Estudiante" val={s.asig[`m${mIdx}`]} options={MIEMBROS} edit={editMode} onSelect={v => updateAsig(sIdx, `m${mIdx}`, v)} />
-                          <SelectRow label="Ayudante" val={s.asig[`m${mIdx}A`]} options={MIEMBROS} edit={editMode} onSelect={v => updateAsig(sIdx, `m${mIdx}A`, v)} />
+                          <SelectRow label="Estudiante" val={s.asig[`m${mIdx}`]} options={miembros} edit={editMode} onSelect={v => updateAsig(sIdx, `m${mIdx}`, v)} />
+                          <SelectRow label="Ayudante" val={s.asig[`m${mIdx}A`]} options={miembros} edit={editMode} onSelect={v => updateAsig(sIdx, `m${mIdx}A`, v)} />
                         </>
                       ) : (
                         <SelectRow label="Discursante" val={s.asig[`m${mIdx}`]} options={getFiltered("", "disc")} edit={editMode} onSelect={v => updateAsig(sIdx, `m${mIdx}`, v)} />
@@ -413,7 +767,7 @@ const App = () => {
                 <div className="flex items-center gap-3 border-b-2 border-blue-800 pb-1 text-blue-800 leading-none"><Users size={24}/><h3 className="font-black uppercase text-xs italic tracking-tighter leading-none tracking-widest leading-none">Reunión de Fin de Semana</h3></div>
                 
                 <div className="bg-white p-6 rounded-[2rem] border border-blue-100 shadow-sm mb-4 leading-none">
-                  <SelectRow label="Presidente" val={s.asig.wePresi} options={MIEMBROS.filter(m => m.r.includes("wePresi"))} edit={editMode} onSelect={v => updateAsig(sIdx, 'wePresi', v)} />
+                  <SelectRow label="Presidente" val={s.asig.wePresi} options={getFiltered("wePresi")} edit={editMode} onSelect={v => updateAsig(sIdx, 'wePresi', v)} />
                   <div className="mt-6 pt-6 border-t-2 border-slate-50 text-center space-y-2 leading-none shadow-inner p-2 rounded-xl">
                     <p className="text-[9px] font-black text-blue-600 uppercase tracking-widest leading-none">Discurso Público</p>
                     {editMode ? (
@@ -445,8 +799,8 @@ const App = () => {
                       <p className="text-[10px] font-black text-blue-900 italic leading-snug px-4 uppercase tracking-tighter leading-none shadow-none px-4 leading-none tracking-tighter leading-tight italic leading-none leading-none shadow-none">"{s.asig.atTitulo || "Artículo de Estudio"}"</p>
                    </div>
                    <div className="space-y-0.5">
-                    <SelectRow label="Conductor" val={s.asig.atCond} options={MIEMBROS.filter(m => m.r.includes("atCond"))} edit={editMode} onSelect={v => updateAsig(sIdx, 'atCond', v)} />
-                    <SelectRow label="Lector" val={s.asig.atLect} options={MIEMBROS.filter(m => m.r.includes("atLect") || m.n.includes("Cristian"))} edit={editMode} onSelect={v => updateAsig(sIdx, 'atLect', v)} />
+                    <SelectRow label="Conductor" val={s.asig.atCond} options={getFiltered("atCond")} edit={editMode} onSelect={v => updateAsig(sIdx, 'atCond', v)} />
+                    <SelectRow label="Lector" val={s.asig.atLect} options={getFiltered("atLect")} edit={editMode} onSelect={v => updateAsig(sIdx, 'atLect', v)} />
                    </div>
                 </div>
 
@@ -505,10 +859,10 @@ const SelectRow = ({ label, val, options, edit, onSelect }) => (
         <option value="">-- SELEC. --</option>
         {options?.map(o => <option key={o.n} value={o.n}>{o.n}</option>)}
       </select>
-    ) : <span className="text-[12px] font-black text-slate-900 tracking-tighter leading-none italic italic tracking-tighter leading-none italic shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none">{val || "---"}</span>}
+    ) : <span className="text-[12px] font-black text-slate-900 tracking-tighter leading-none italic">{val || "---"}</span>}
   </div>
 );
 
-const SectionHeader = ({ title, color }) => <div className={`${color} text-white text-[9px] font-black px-4 py-1 rounded-lg uppercase mb-2 shadow-none leading-none tracking-widest leading-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none shadow-none`}>{title}</div>;
+const SectionHeader = ({ title, color }) => <div className={`${color} text-white text-[9px] font-black px-4 py-1 rounded-lg uppercase mb-2 leading-none tracking-widest`}>{title}</div>;
 
 export default App;
