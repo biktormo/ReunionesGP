@@ -91,6 +91,7 @@ const MIEMBROS_DEFAULT = [
 
 const OP_LIMPIEZA = [{ n: "Grupo 1" }, { n: "Grupo 2" }, { n: "Limpieza Profunda" }];
 const MESES = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
+const ANIOS_DISPONIBLES = [2025, 2026, 2027, 2028, 2029, 2030];
 
 // Generador de semanas base del mes
 const generarSemanasBase = (m, a) => {
@@ -738,13 +739,26 @@ const App = () => {
                 </button>
               )}
 
-              <select 
-                className="bg-slate-50 border border-slate-300 font-bold text-xs text-slate-800 rounded-xl px-2.5 py-1.5 outline-none shadow-sm cursor-pointer"
-                value={mes} 
-                onChange={e => setMes(Number(e.target.value))}
-              >
-                {MESES.map((m, i) => <option key={i} value={i}>{m}</option>)}
-              </select>
+              {/* Selector combinado: Año primero y luego Mes */}
+              <div className="flex items-center bg-slate-50 border border-slate-300 rounded-xl shadow-sm overflow-hidden divide-x divide-slate-200">
+                <select 
+                  className="bg-transparent font-black text-xs text-blue-900 px-2 py-1.5 outline-none cursor-pointer hover:bg-slate-100 transition-colors"
+                  value={anio} 
+                  onChange={e => setAnio(Number(e.target.value))}
+                  title="Seleccionar Año"
+                >
+                  {ANIOS_DISPONIBLES.map(a => <option key={a} value={a}>{a}</option>)}
+                </select>
+
+                <select 
+                  className="bg-transparent font-bold text-xs text-slate-800 px-2.5 py-1.5 outline-none cursor-pointer hover:bg-slate-100 transition-colors"
+                  value={mes} 
+                  onChange={e => setMes(Number(e.target.value))}
+                  title="Seleccionar Mes"
+                >
+                  {MESES.map((m, i) => <option key={i} value={i}>{m}</option>)}
+                </select>
+              </div>
 
               <button 
                 onClick={() => { signOut(auth); setUser(null); }}
