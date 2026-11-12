@@ -158,6 +158,7 @@ const App = () => {
   });
 
   const targetWeekRef = useRef(null);
+  const activeDocIdRef = useRef(null);
   const [editMode, setEditMode] = useState(false);
   const [showMeta, setShowMeta] = useState(false);
   const [historialProgramas, setHistorialProgramas] = useState({});
@@ -233,18 +234,27 @@ const App = () => {
       setSemanas(fusion);
       setHistorialProgramas(prev => ({ ...prev, [docId]: fusion }));
 
-      if (targetWeekRef.current === 'last') {
-        setSemanaIdx(fusion.length - 1);
-        targetWeekRef.current = null;
-      } else if (targetWeekRef.current === 'first') {
-        setSemanaIdx(0);
-        targetWeekRef.current = null;
-      } else {
-        if (mes === hoyRef.getMonth() && anio === hoyRef.getFullYear()) {
-          setSemanaIdx(encontrarSemanaActual(fusion));
-        } else {
+      const isMonthOrYearChange = activeDocIdRef.current !== docId;
+      activeDocIdRef.current = docId;
+
+      if (isMonthOrYearChange) {
+        if (targetWeekRef.current === 'last') {
+          setSemanaIdx(fusion.length - 1);
+          targetWeekRef.current = null;
+        } else if (targetWeekRef.current === 'first') {
           setSemanaIdx(0);
+          targetWeekRef.current = null;
+        } else {
+          if (mes === hoyRef.getMonth() && anio === hoyRef.getFullYear()) {
+            setSemanaIdx(encontrarSemanaActual(fusion));
+          } else {
+            setSemanaIdx(0);
+          }
         }
+      } else {
+        // En actualizaciones en tiempo real del MISMO mes (ej: al asignar o guardar),
+        // preservamos la semana seleccionada por el usuario sin saltar a otra semana
+        setSemanaIdx(prev => Math.min(prev, Math.max(0, fusion.length - 1)));
       }
     });
     return () => unsub();
@@ -357,6 +367,7 @@ const App = () => {
   const updateAsig = (sIdx, field, val) => {
     if (!canEditAny) return;
     const n = [...semanas];
+    if (!n[sIdx]) return;
     if (!n[sIdx].asig) n[sIdx].asig = {};
     n[sIdx].asig[field] = val;
     setSemanas(n);
@@ -444,6 +455,7 @@ const App = () => {
       setSemanaIdx(semanaIdx - 1);
     } else {
       targetWeekRef.current = 'last';
+      activeDocIdRef.current = null;
       if (mes === 0) { setMes(11); setAnio(anio - 1); }
       else { setMes(mes - 1); }
     }
@@ -454,6 +466,7 @@ const App = () => {
       setSemanaIdx(semanaIdx + 1);
     } else {
       targetWeekRef.current = 'first';
+      activeDocIdRef.current = null;
       if (mes === 11) { setMes(0); setAnio(anio + 1); }
       else { setMes(mes + 1); }
     }
@@ -463,6 +476,7 @@ const App = () => {
     const curM = hoyRef.getMonth();
     const curA = hoyRef.getFullYear();
     if (mes !== curM || anio !== curA) {
+      activeDocIdRef.current = null;
       setMes(curM);
       setAnio(curA);
     } else {
