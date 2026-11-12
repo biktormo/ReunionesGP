@@ -1399,7 +1399,7 @@ const App = () => {
 
                       <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-2">
                         <span className="block text-[11px] font-black uppercase text-slate-700 mb-1">
-                          🚪 Acomodación y Sonido
+                          🚪 Acomodadores y Audio Video
                         </span>
                         <SelectRow 
                           label="Acomodador de Entrada" 
@@ -1661,7 +1661,7 @@ const App = () => {
 
                       <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-2">
                         <span className="block text-[11px] font-black uppercase text-slate-700 mb-1">
-                          🚪 Acomodación y Sonido
+                          🚪 Acomodadores y Audio Video
                         </span>
                         <SelectRow 
                           label="Acomodador de Entrada" 
